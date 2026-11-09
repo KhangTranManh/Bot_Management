@@ -9,6 +9,7 @@ import { eventsVerb } from "./events.ts";
 import { exportVerb } from "./export.ts";
 import { Output, processIo, type HeadlessIo } from "./output.ts";
 import { runVerb, waitVerb } from "./run.ts";
+import { leadPlanVerb } from "./lead.ts";
 import { teamApplyVerb, teamExportVerb } from "./team-apply.ts";
 import { tokenVerb } from "./token.ts";
 
@@ -72,6 +73,8 @@ openmausbot doctor --host [--data-dir DIR] [--port 8799] [--domain HOST]
   and rooms the file leaves out, in teams marked prune: true. Keys come from { env } or { file },
   and a key already set is kept unless --rotate-secrets. docs/headless-cli.md has the format.`,
   "team export": "openmausbot team export [--team NAME]… --out FILE\n  Write the workspace (or some teams) as a team file; skills go beside it, keys as placeholders,\n  and a key written into a soul, brief or skill is taken out.",
+  lead: "openmausbot lead plan DIR [--workers N] [--json]\n  Read DIR/goal.json and DIR/tasks/*.json, validate them, and print the dispatch waves.\n  Exit 0 planned; 1 disabled (set OMB_LEAD_DEPT_CAP=1), invalid, or a vendor rule violation.",
+  "lead plan": "openmausbot lead plan DIR [--workers N] [--json]\n  Read DIR/goal.json and DIR/tasks/*.json, validate them, and print the dispatch waves\n  (topological, with conflicts marked) plus the next round to approve at autonomy level 1.",
   engine: "openmausbot engine set KIND … | engine list   (see help engine set)",
   "engine set": `openmausbot engine set KIND (--key-env VAR | --key-file FILE) [--base-url URL] [--only-claude-api] [--install] [--rotate] [--dry-run]
   Give the workspace an engine key: claude, openai, openrouter, openai-compatible, xai, groq, greenference, mistral or cerebras.
@@ -108,7 +111,7 @@ export interface HeadlessOptions {
 const VERBS: Record<string, (ctx: VerbContext) => Promise<VerbOutcome>> = {
   doctor, bots: list, channels: list, models: list, messages, send, "send-channel": send, run: runVerb, wait: waitVerb,
   interrupt, "new-bot": newBot, "new-channel": newChannel, "set-model": setModel, edit, export: exportVerb, events: eventsVerb,
-  "team apply": teamApplyVerb, "team export": teamExportVerb, "engine set": engineVerb, "engine list": engineVerb, connect: connectVerb,
+  "team apply": teamApplyVerb, "team export": teamExportVerb, "lead plan": leadPlanVerb, "engine set": engineVerb, "engine list": engineVerb, connect: connectVerb,
   "token create": tokenVerb, "token list": tokenVerb, "token revoke": tokenVerb,
 };
 

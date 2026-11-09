@@ -12,6 +12,7 @@ export const HEADLESS_USAGE = `Drive a running workspace (scripts, CI, other age
   openmausbot export BOT --out DIR      write a job's transcripts, files and screens to DIR
   openmausbot events [--job THREAD]     the server's live events as JSON lines
   openmausbot team apply FILE           make the workspace match a team file (team export writes one)
+  openmausbot lead plan DIR             validate a goal/task workspace and print the dispatch waves (lead-dept)
   openmausbot engine set claude --key-env ANTHROPIC_API_KEY   give it an engine without a screen
   openmausbot connect URL --code CODE --out FILE              get a token for a workspace elsewhere
   openmausbot token create NAME --out FILE [--expires 90d]    a token for CI that ends on its date (token list, token revoke ID)
