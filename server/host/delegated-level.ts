@@ -3,6 +3,7 @@
 import type { ApprovalMode } from "../../shared/approval-mode.ts";
 import { delegatedApprovalMode } from "../auto-approve.ts";
 import { chiefLevel } from "../chief-level.ts";
+import { capLeadDeptLevel } from "../lead-cap.ts";
 import type { HandoffView, RoomAddress } from "../coordinator.ts";
 import type { BotRecord, Store } from "../store.ts";
 
@@ -45,10 +46,11 @@ export function createDelegatedLevel(deps: DelegatedLevelDeps) {
     const above = chiefAbove(from);
     if (!from || !above || deps.handsNoLevel(from.threadId) || deps.handsNoLevel(above.threadId)) return null;
     const chiefMode = deps.sourceLevel(above.chief.id, above.threadId);
-    const level = delegatedApprovalMode({
+    const delegated = delegatedApprovalMode({
       senderIsChief: true, senderMode: chiefMode, sameBot: from.botId === target.id || above.chief.id === target.id,
       recipientMode: own, recipientDriverKind: deps.driverKind(target),
     });
+    const level = delegated ? capLeadDeptLevel(target, delegated) : null;
     return level ? { level, chief: above.chief, chiefMode } : null;
   }
 
