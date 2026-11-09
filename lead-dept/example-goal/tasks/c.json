@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "c",
+  "goalId": "it-website",
+  "title": "Wire the signup form and analytics",
+  "reads": ["out/index.html", "out/analytics.js"],
+  "writes": ["out/signup.js"],
+  "locks": [],
+  "doneWhen": "out/signup.js installs a working form that fires the analytics event",
+  "role": "implementer",
+  "model": { "instance": "claude", "model": "claude-sonnet-5" },
+  "dependsOn": ["a", "b"]
+}

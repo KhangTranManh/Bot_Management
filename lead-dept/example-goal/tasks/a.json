@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "a",
+  "goalId": "it-website",
+  "title": "Build the landing page",
+  "reads": ["brief.md"],
+  "writes": ["out/index.html"],
+  "locks": [],
+  "doneWhen": "out/index.html exists and renders the hero and CTA",
+  "role": "implementer",
+  "model": { "instance": "claude", "model": "claude-sonnet-5" },
+  "dependsOn": []
+}

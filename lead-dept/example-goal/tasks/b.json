@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "b",
+  "goalId": "it-website",
+  "title": "Install the analytics snippet",
+  "reads": ["brief.md"],
+  "writes": ["out/analytics.js"],
+  "locks": [],
+  "doneWhen": "out/analytics.js is a valid snippet with no secrets",
+  "role": "implementer",
+  "model": { "instance": "codex", "model": "gpt-5-codex" },
+  "dependsOn": []
+}

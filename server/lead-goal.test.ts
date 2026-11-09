@@ -50,6 +50,13 @@ describe("parseLeadGoal", () => {
     delete noBudget.budget;
     expect(parseLeadGoal(JSON.stringify(noBudget)).ok).toBe(false);
   });
+  it("defaults createdAt to now when omitted", () => {
+    const noCreated = JSON.parse(goalText);
+    delete noCreated.createdAt;
+    const r = parseLeadGoal(JSON.stringify(noCreated));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.createdAt).toBeGreaterThan(Date.now() - 60_000);
+  });
 });
 
 describe("parseLeadTaskBallot", () => {

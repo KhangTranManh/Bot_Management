@@ -31,7 +31,7 @@ export const leadGoalSchema = z.object({
   sharedInputs: pathList.optional().default([]),
   pilotGate: z.string().trim().max(2000).optional(),
   autonomy: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1),
-  createdAt: z.number().int().positive(),
+  createdAt: z.number().int().positive().default(() => Date.now()),
 });
 export type LeadGoal = z.output<typeof leadGoalSchema>;
 
