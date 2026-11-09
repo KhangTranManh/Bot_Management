@@ -1,9 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VerbContext } from "./context.ts";
 import { leadPlanVerb } from "./lead.ts";
+import { runHeadless } from "./main.ts";
+import type { HeadlessIo } from "./output.ts";
 
 const dirs: string[] = [];
 
@@ -91,5 +93,41 @@ describe("leadPlanVerb", () => {
     const out = await leadPlanVerb(ctx(dir, { OMB_LEAD_DEPT_CAP: "1" }));
     expect(out.exitCode).toBe(1);
     expect(out.result).toEqual({ error: expect.stringContaining("share vendor") });
+  });
+});
+
+describe("lead run", () => {
+  function runHarness() {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const callTool = vi.fn(async (name: string, args: Record<string, unknown>) => {
+      calls.push({ name, args });
+      if (name === "create_task") return { success: true, task: { taskId: "fresh" } };
+      if (name === "send_bot_message") return { success: true, botId: args.bot_id, taskId: args.task_id ?? "b-active", messageId: "m1" };
+      throw new Error(`unexpected tool ${name}`);
+    });
+    const io: HeadlessIo = { out: () => undefined, err: () => undefined, readStdin: async () => "" };
+    const run = async (argv: string[], env: Record<string, string> = {}) =>
+      runHeadless(argv, { env: { OPENMAUSBOT_URL: "http://127.0.0.1:19999", ...env }, io, callTool: callTool as never, request: vi.fn() as never });
+    return { calls, run };
+  }
+
+  it("sends a self-contained brief to the Lead with the deterministic waves", async () => {
+    const dir = ws({ "goal.json": goalJson(), "tasks/a.json": ballot("a"), "tasks/b.json": ballot("b"), "tasks/c.json": ballot("c", { dependsOn: ["a", "b"] }) });
+    const h = runHarness();
+    const code = await h.run(["lead", "run", dir, "--bot", "lead-bot"], { OMB_LEAD_DEPT_CAP: "1" });
+    expect(code).toBe(0);
+    const send = h.calls.find((call) => call.name === "send_bot_message");
+    expect(send).toBeDefined();
+    expect(send!.args.bot_id).toBe("lead-bot");
+    expect(String(send!.args.text)).toContain("wave 1: a, b");
+    expect(String(send!.args.text)).toContain("wave 2: c");
+    expect(String(send!.args.text)).toContain("Autonomy level 1");
+  });
+
+  it("is disabled without the flag", async () => {
+    const h = runHarness();
+    const code = await h.run(["lead", "run", "does-not-exist", "--bot", "lead-bot"], {});
+    expect(code).toBe(1);
+    expect(h.calls).toEqual([]);
   });
 });
