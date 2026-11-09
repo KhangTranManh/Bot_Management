@@ -1,4 +1,12 @@
-import type { LeadTaskBallot } from "./lead-goal.ts";
+/** A task ballot as the wave scheduler reads it. `reads`/`writes`/`locks` are paths or lock names; two
+ * tasks may run in the same wave only when none of these overlap and neither waits on the other. */
+export interface LeadTaskBallot {
+  id: string;
+  reads: readonly string[];
+  writes: readonly string[];
+  locks: readonly string[];
+  dependsOn: readonly string[];
+}
 
 export const LEAD_MAX_WAVE_SIZE = 5;
 

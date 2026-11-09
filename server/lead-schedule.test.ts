@@ -1,22 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { canRunParallel, leadConflictsInWave, leadTasksConflict, leadWaves, type LeadWaveResult } from "./lead-schedule.ts";
-import type { LeadTaskBallot } from "./lead-goal.ts";
+import { canRunParallel, leadConflictsInWave, leadTasksConflict, leadWaves, type LeadTaskBallot, type LeadWaveResult } from "./lead-schedule.ts";
 
 function ballot(id: string, over: Partial<LeadTaskBallot> = {}): LeadTaskBallot {
-  return {
-    version: 1,
-    id,
-    goalId: "g1",
-    title: id,
-    reads: [],
-    writes: [],
-    locks: [],
-    doneWhen: "done",
-    role: "implementer",
-    model: { instance: "claude", model: "m" },
-    dependsOn: [],
-    ...over,
-  };
+  return { id, reads: [], writes: [], locks: [], dependsOn: [], ...over };
 }
 
 describe("leadTasksConflict", () => {

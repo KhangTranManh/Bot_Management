@@ -96,8 +96,6 @@ const VERBS: Record<string, { options: ParseArgsOptionsConfig; positionals: numb
     positionals: 1,
   },
   "team export": { options: { team: { type: "string", multiple: true }, out: { type: "string" } }, positionals: 0 },
-  "lead plan": { options: { workers: { type: "string" } }, positionals: 1 },
-  "lead run": { options: { bot: { type: "string" }, workers: { type: "string" } }, positionals: 1 },
   "engine set": {
     options: { "key-env": { type: "string" }, "key-file": { type: "string" }, "base-url": { type: "string" },
       "only-claude-api": { type: "boolean" }, install: { type: "boolean" }, rotate: { type: "boolean" }, "dry-run": { type: "boolean" } },
@@ -129,7 +127,7 @@ export interface ParsedCommand {
   positionals: string[];
 }
 
-const SUBCOMMANDS = new Map([["team", ["apply", "export"]], ["engine", ["set", "list"]], ["token", ["create", "list", "revoke"]], ["lead", ["plan", "run"]]]);
+const SUBCOMMANDS = new Map([["team", ["apply", "export"]], ["engine", ["set", "list"]], ["token", ["create", "list", "revoke"]]]);
 
 /** Strict: an unknown flag or a missing value is a usage error (exit 2). */
 export function parseCommand(argv: readonly string[]): ParsedCommand {
