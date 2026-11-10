@@ -107,9 +107,9 @@ trong file goal của từng project.
 - Viết đầy đủ Phần B theo mẫu (mức, loại luật, điểm gắn, test, phương án loại) trước khi làm Phần C.
 
 ### 3.4 Thứ tự đề xuất (rẻ và an toàn trước)
-1. B0(i) — sửa luôn lỗi mục 1.1.
-2. B12–B13.
-3. B0(ii)–(iv), B1, B4.
+1. ~~B0(i) — sửa luôn lỗi mục 1.1~~ **xong** (`c65af79db`).
+2. ~~B12–B13~~ **xong** (2026-11-10); kèm **B1** xong: `WireGroup.kind` ("code" | "research"), PATCH `/api/groups/:id`, e2e `room-kind`.
+3. B0(ii)–(iv), B4.
 4. B2, B8, B11, B7, rồi B3, B6, B9.
 5. B10 song song (phần lớn ở phía máy GPU).
 
@@ -123,7 +123,7 @@ trong file goal của từng project.
 | Bước | Commit | Test hành vi thật | Cần bổ sung |
 |---|---|---|---|
 | 1.1 side reply | `b33a70e48`, `ac0fbac13` | Có: e2e "ordinary chat", "mid-goal" | — |
-| 1.2 consult ở ask | `fc8ff3d06` | **Không**: chỉ unit phần ghi chép | **Sửa thật + e2e (mục 1.1)** |
+| 1.2 consult ở ask (B0(i)) | `c65af79db` | Có: e2e `role-ceiling` (consult bot `full` → `default` khi flag ON, `bypassPermissions` khi OFF, Chief lift vẫn nâng khi ON) | — |
 | 1.3 sóng mặc định | `f68cf9f7e` | Có: e2e sóng song song không cần cờ; e2e công tắc API | — |
 | 2.1–2.5 vai, cổng Tester | `2a843c1cb` | Có: e2e Lead→Worker→Tester→xong. Trả kế hoạch, vòng sửa, chặn `completed` sớm: unit trên vòng goal thật với bước giả lập | e2e cho vòng sửa; Reviewer chỉ-đọc chỉ test việc truyền cờ |
 | 2.6 tự chạy goal, `/chat` | `91448816c` | Có: e2e | — |
@@ -135,18 +135,11 @@ trong file goal của từng project.
 
 Tất cả chạy trên engine giả; chưa kiểm trên app thật với model thật.
 
-## 5. README cần sửa (B13)
-- "Reviewers read only … at the *Ask* level": **sai** cho đến khi B0(i) xong. Sửa thành mô tả đúng hoặc đánh dấu chưa thi hành.
-- "Ask anyone, stop no one": đúng cho tin tag bot; nút Stop vẫn dừng cả cây việc (có chủ đích) — nên nói rõ.
-- Thêm mục **Known limitations**:
-  - `writes` chỉ dùng để xếp lịch, chưa phát hiện ghi ngoài vùng.
-  - PASS dựa vào dòng `VERDICT` của Tester cho đến khi vá B0(ii).
-  - Trần quyền theo vai chưa thi hành (mục 1.1).
-  - API key lưu dạng văn bản thường trong `config.json` (kế thừa upstream).
-  - Máy local không có sandbox: tập khoá chỉ phát hiện sau.
-  - Kết quả nghiên cứu cần provenance (B10).
-  - Giới hạn 13 lượt: hết lượt chỉ tạm dừng, không có tóm tắt bàn giao.
-- `pnpm lint` fail cho đến khi dọn `..dist/` (mục 1.2).
+## 5. README cần sửa (B13) — ĐÃ XONG (2026-11-10)
+- "Reviewers read only" đã ghi đúng: hard-enforced với `OMB_ROLE_CEILING=1`, không có flag thì dựa model.
+- "Ask anyone, stop no one" đã nói rõ nút Stop dừng cả cây việc (có chủ đích).
+- Đã thêm mục **Known limitations** (writes chỉ xếp lịch; PASS từ VERDICT tới B0(ii); trần quyền cần flag; API key plain text; local không sandbox; provenance B10; 13 lượt không bàn giao).
+- `pnpm lint` đã sạch sau khi gỡ `..dist/` khỏi tracking (commit `222785ec0`).
 
 ## 6. Nhiệm vụ "định nghĩa workflow nghiên cứu/huấn luyện" (chỉ tài liệu, không sửa code) — đánh giá
 

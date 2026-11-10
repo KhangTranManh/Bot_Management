@@ -3723,6 +3723,11 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if (typeof body.goalWaves !== "boolean") throw Object.assign(new Error("goalWaves must be true or false"), { status: 400 });
     patch.goalWaves = body.goalWaves ? undefined : false;
   }
+  if (body.kind !== undefined) {
+    if (body.kind === null) patch.kind = undefined;
+    else if (body.kind === "code" || body.kind === "research") patch.kind = body.kind;
+    else throw Object.assign(new Error("kind must be code or research"), { status: 400 });
+  }
   if (Object.prototype.hasOwnProperty.call(body, "turnTimeoutMinutes")) {
     if (!existing.dm) {
       throw Object.assign(new Error("set the turn limit on that conversation"), { status: 400 });

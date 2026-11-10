@@ -35,14 +35,14 @@ who checks, what happens when you interrupt, and how you see what everyone is do
 | **Parallel waves by default** | In a room of three or more, the Lead plans tasks with dependencies and declared writes; independent tasks run side by side, each in its own lane thread. Tasks that touch the same files run one after another. A *Parallel goal work* switch turns it off per room. |
 | **Tester gate** | A plan with Worker tasks gets a Tester task that waits on them. The goal cannot complete until the Tester ends with `VERDICT: PASS`. A failure starts a fix round for the Worker who owns the file (at most three). |
 | **Plan checks** | A plan that hands work to the Lead, to a member without a role, or to a Worker without listing what it writes goes back to the Lead to fix. |
-| **Reviewers read only** | Review tasks run as consultations at the *Ask* level: any write or command waits for your approval. |
+| **Reviewers read only** | Review tasks run as consultations at the *Ask* level: any write or command waits for your approval. Hard-enforced with `OMB_ROLE_CEILING=1` (a consultation node's recorded level caps the turn and the app's auto-approvals); without the flag it relies on the model following its role. |
 | **Out of AI usage** | A member whose model hits its usage limit or runs out of credits leaves the run; the Lead is told to hand its task to a free member of the same role. Bots with a backup AI configured keep going on it, as before. |
 
 ### Talking to a team that is working
 
 | | |
 |---|---|
-| **Ask anyone, stop no one** | Mention a teammate while the room is busy (`@Clover is the API done?`) and it answers in a lane of its own. The running work and every other bot keep going. A teammate that is busy answers after its current step. |
+| **Ask anyone, stop no one** | Mention a teammate while the room is busy (`@Clover is the API done?`) and it answers in a lane of its own. The running work and every other bot keep going. A teammate that is busy answers after its current step. Stop still ends the whole tree of work it started, by design. |
 | **Progress at once** | A short question such as *"how is it going?"* or *"tình hình sao rồi"* while the room works is answered immediately by the app — goal turn, who is on what, for how long, latest step — without spending a bot turn. |
 | **Work requests become goals** | In a room with a Lead, a message that asks for work (*"build the checkout page"*, *"fix the login bug"*) starts a goal automatically. Start a message with `/chat` to just talk, or `/goal` to force a goal. Switchable per room. |
 
@@ -53,6 +53,16 @@ who checks, what happens when you interrupt, and how you see what everyone is do
   newest step.
 - **Goal panel**: click a goal card to see the run's turn, the team, and every result since the goal started.
 - Long bot replies in a room fold to their opening with **Show full**.
+
+### Known limitations
+
+- Declared `writes` only order the plan's waves; writes outside the declared set are not detected yet.
+- PASS rests on the Tester's `VERDICT` line until verdicts are matched against executed-command evidence.
+- The role permission ceiling needs `OMB_ROLE_CEILING=1`; without it, consult-at-Ask relies on the model.
+- API keys are stored as plain text in `config.json` (inherited from upstream).
+- A local machine has no filesystem sandbox: out-of-bounds writes are detected after the fact at best.
+- Research results need provenance (manifest + validator) before their numbers can be trusted.
+- The 13-turn goal limit pauses a run without a hand-off summary; sending the goal again restarts the count.
 
 ### Engines and fixes
 

@@ -847,6 +847,8 @@ export interface WireGroup {
   goalWaves?: boolean;
   /** Standing team roles by member id: at most one lead. Goals in a room with roles follow them. */
   roles?: Record<string, TeamRole>;
+  /** What the room is for: absent is an ordinary chat room; "code" and "research" gate their workflows. */
+  kind?: "code" | "research";
   /** Run a person's work request as a goal; absent means on once the room has a lead. */
   autoGoal?: boolean;
   /** Computed from the usage ledger, not stored in groups.json. */
