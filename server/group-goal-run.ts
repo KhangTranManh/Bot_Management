@@ -5,6 +5,7 @@ import type { GroupDefaultResponder } from "./store.ts";
 import { LEAD_MAX_WAVE_SIZE, leadBallotFromPlan, leadBatchesForWave, leadWaves, type LeadTaskPlan } from "./lead-schedule.ts";
 import type { TeamRole } from "../shared/team-roles.ts";
 import { TEAM_MAX_FIX_ROUNDS, teamPlanProblem, teamRoleRule, testerVerdict, withTesterTask } from "./team-roles.ts";
+import { engineFailureKind } from "./drivers/engine-errors.ts";
 
 // Odd so the final bounded turn always falls to the coordinator for the completion decision.
 export const GROUP_GOAL_MAX_TURNS = 13;
@@ -296,9 +297,16 @@ async function dispatchWaveBatch<Bot extends GoalRunMember>(
   })).map(({ entry, result }) => ({ entry, result: normalize(result) }));
 }
 
+/** The member's AI refused for its usage limit or credits: retrying cannot help until it resets. */
+export function outOfUsage(result: GoalStepResult): boolean {
+  if (result.outcome === "settled" || result.outcome === "cancelled") return false;
+  const kind = engineFailureKind(result.stopReason ?? "");
+  return kind === "usage_limit" || kind === "credits";
+}
+
 async function stepOnceRetried<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>, bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult> {
   const first = await deps.step(bot, coordinator, instructions, lane);
-  if (!TRANSIENT_STEP.has(first.outcome) || deps.cancelled()) return first;
+  if (!TRANSIENT_STEP.has(first.outcome) || outOfUsage(first) || deps.cancelled()) return first;
   const why = { provider_failed: "chat.notice.part.providerFailed", dispatch_failed: "chat.notice.part.dispatchFailed", stalled: "chat.notice.part.goalStalled", timed_out: "chat.notice.part.goalTimedOut" }[first.outcome as "provider_failed" | "dispatch_failed" | "stalled" | "timed_out"];
   const retry = noticeFailure("chat.notice.goalRetry", { name: bot.name, why });
   deps.progress(retry.message, retry.text);
@@ -325,6 +333,19 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   const roleOf = (botId: string): TeamRole | undefined => roles?.[botId];
   const tester = roles ? goalMembers.find((member) => !member.hidden && roles[member.id] === "tester") : undefined;
   const team = { untested: false, fixRounds: 0, planRefusals: 0, earlyCompletions: 0 };
+  /** Members whose AI ran out of usage during this run: no more tasks go to them. */
+  const outOfRun = new Set<string>();
+  /** Takes a member out of the run for its usage limit and names who can take its task; a reason means the run stops. */
+  const replaceOutOfUsage = (bot: Bot, assignment: string): string | undefined => {
+    outOfRun.add(bot.id);
+    const role = roleOf(bot.id);
+    const stand = goalMembers.find((member) => !member.hidden && member.id !== bot.id && member.id !== coordinator.id && !outOfRun.has(member.id) &&
+      (roles ? roleOf(member.id) === role : true));
+    if (!stand) return `${bot.name} ran out of AI usage and no other ${role ?? "teammate"} can take its work.`;
+    deps.note(`${bot.name} ran out of AI usage — ${stand.name} takes its work`);
+    coordinatorNote = `${bot.name} ran out of AI usage and is out of this run. Give its task "${assignment.slice(0, 160)}" to ${stand.name} (${stand.id}).`;
+    return undefined;
+  };
   /** Folds one settled member result into the Tester gate; a reason means the run stops there. */
   const settle = (bot: Bot, replyText: string): string | undefined => {
     const role = roleOf(bot.id);
@@ -419,7 +440,10 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
         }
         planned.push({ plan: task, bot });
       }
-      const problem = roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf) : undefined;
+      const outTask = planned.find(({ bot }) => outOfRun.has(bot.id));
+      const problem = outTask
+        ? `task ${outTask.plan.id} goes to ${outTask.bot.name}, whose AI ran out of usage in this run`
+        : roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf) : undefined;
       if (problem) {
         team.planRefusals += 1;
         if (team.planRefusals >= 3) {
@@ -484,6 +508,14 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
           if (deps.dispatchWave && !deps.solo && results.some(({ result }) => result.ran)) run.turnCount += 1;
           if (deps.cancelled()) return;
           for (const { entry, result } of results) {
+            if (outOfUsage(result)) {
+              const stop = replaceOutOfUsage(entry.bot, entry.plan.instruction);
+              if (stop) {
+                deps.finish("blocked", stop);
+                return;
+              }
+              continue;
+            }
             if (result.outcome === "unavailable") {
               deps.finish("blocked", `${entry.bot.name} is not available.`);
               return;
@@ -528,6 +560,10 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       return;
     }
     const workerBot = deps.current(worker.id);
+    if (workerBot && outOfRun.has(workerBot.id)) {
+      coordinatorNote = `${workerBot.name}'s AI ran out of usage in this run; give the assignment to someone else.`;
+      continue;
+    }
     if (!workerBot || workerBot.hidden) {
       deps.finish("blocked", `${worker.name} is not available.`);
       return;
@@ -554,6 +590,14 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       teamRule: teamRoleRule(roleOf(workerBot.id)),
     }));
     if (deps.cancelled()) return;
+    if (outOfUsage(workerResult)) {
+      const stop = replaceOutOfUsage(workerBot, decision.instruction);
+      if (stop) {
+        deps.finish("blocked", stop);
+        return;
+      }
+      continue;
+    }
     if (workerResult.outcome === "unavailable") {
       deps.finish("blocked", `${workerBot.name} is not available.`);
       return;

@@ -264,6 +264,36 @@ beforeAll(async () => {
         },
         config: { cli: FAKE_CLAUDE },
       },
+      limitLead: {
+        driver: "claudeAgent",
+        displayName: "Limit lead fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify([
+            "Maple builds.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit maple\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
+            "Clover takes it.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Moved\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit clover\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
+            "Done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"UI built by Clover.\"}</openmaus-goal>",
+          ]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "limit-lead-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      limitOut: {
+        driver: "claudeAgent",
+        displayName: "Limit out fixture",
+        environment: { FAKE_CLAUDE_MODE: "usage-limit" },
+        config: { cli: FAKE_CLAUDE },
+      },
+      limitIn: {
+        driver: "claudeAgent",
+        displayName: "Limit in fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Built ui.tsx.", "Checked.\nVERDICT: PASS"]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "limit-in-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
       sideLead: {
         driver: "claudeAgent",
         displayName: "Side lead fixture",
@@ -1468,5 +1498,24 @@ describe("goal-driven channel runs", () => {
     await idle();
     await api("PATCH", `/api/groups/${room.id}`, { autoGoal: false });
     expect((await send("làm trang chủ cho web", "auto_send_sw_12345678901")).body.message).toMatchObject({ channelMode: "chat" });
+  });
+
+  it("gives the task of a Worker whose AI runs out of usage to another Worker and finishes the goal", async () => {
+    const make = async (name: string, instanceId: string) => (await api("POST", "/api/bots", { name, modelSelection: { instanceId, model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const lead = await make("Limit lead", "limitLead");
+    const maple = await make("Limit maple", "limitOut");
+    const clover = await make("Limit clover", "limitIn");
+    const checker = await make("Limit checker", "limitIn");
+    const room = (await api("POST", "/api/groups", {
+      name: "Limit team", memberIds: [lead.id, maple.id, clover.id, checker.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
+    await api("PATCH", `/api/groups/${room.id}`, { roles: { [lead.id]: "lead", [maple.id]: "worker", [clover.id]: "worker", [checker.id]: "tester" } });
+    expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "Build the UI", mode: "goal", sendId: "goal_send_limit_123456789" })).status).toBe(202);
+    const roomState = async () => (await api("GET", "/api/bots?messages=60")).body.groups.find((g: { id: string }) => g.id === room.id);
+    await expect.poll(async () => (await roomState())?.messages.find((m: { kind: string }) => m.kind === "goal.run")?.goalRun, { timeout: hostTimeout(25_000) })
+      .toMatchObject({ status: "completed", detail: "UI built by Clover." });
+    const notes = (await roomState()).messages.map((m: { tool?: { name?: string } }) => m.tool?.name ?? "");
+    expect(notes).toContain("Limit maple ran out of AI usage — Limit clover takes its work");
   });
 });

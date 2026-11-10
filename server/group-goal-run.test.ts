@@ -572,3 +572,49 @@ describe("team roles in a goal run", () => {
     expect(goal.run.turnCount).toBe(3);
   });
 });
+
+describe("a member that runs out of AI usage in a goal run", () => {
+  const team = [{ id: "lead-id", name: "Lead" }, { id: "maple-id", name: "Maple" }, { id: "clover-id", name: "Clover" }, { id: "tester-id", name: "Checker" }];
+  const roles: Record<string, TeamRole> = { "lead-id": "lead", "maple-id": "worker", "clover-id": "worker", "tester-id": "tester" };
+  const limit: GoalStepResult = { ran: true, replyText: "", outcome: "provider_failed", stopReason: "This OpenCode account has reached its usage limit (OpenCode says: \"Free usage limit reached\")." };
+  const ui = [{ id: "t1", assignee: "Maple", instruction: "Build the UI", writes: ["web/ui.tsx"] }];
+
+  it("is not retried, leaves the run, and the Lead is told to give its task to a free member of the same role", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, roles, members: team,
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: ui })),
+        limit,
+        settled(envelope({ status: "continue", detail: "Again", tasks: ui })),
+        settled(envelope({ status: "continue", detail: "Moved", tasks: [{ ...ui[0]!, assignee: "Clover" }] })),
+        settled("Built web/ui.tsx."),
+        settled("All good.\nVERDICT: PASS"),
+        settled(envelope({ status: "completed", detail: "UI built." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "maple-id", "lead-id", "lead-id", "clover-id", "tester-id", "lead-id"]);
+    expect(goal.calls[2]!.instructions).toContain('Maple ran out of AI usage and is out of this run. Give its task "Build the UI" to Clover (clover-id).');
+    expect(goal.calls[3]!.instructions).toContain("task t1 goes to Maple, whose AI ran out of usage in this run");
+    expect(goal.finished).toEqual([{ status: "completed", detail: "UI built." }]);
+  });
+
+  it("blocks the run with the reason when no one of that role is left", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, roles: { "lead-id": "lead", "maple-id": "worker", "clover-id": "tester" }, members: team.slice(0, 3),
+      steps: [settled(envelope({ status: "continue", detail: "Plan", tasks: ui })), limit],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "Maple ran out of AI usage and no other worker can take its work." }]);
+  });
+
+  it("still fails an ordinary provider failure as before", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, roles, members: team,
+      steps: [settled(envelope({ status: "continue", detail: "Plan", tasks: ui })), { ran: true, replyText: "", outcome: "provider_failed", stopReason: "socket hang up" }],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "maple-id", "maple-id"]);
+    expect(goal.finished).toEqual([{ status: "failed", detail: expect.stringContaining("Maple could not return a result") }]);
+  });
+});
