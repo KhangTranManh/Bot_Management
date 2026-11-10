@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { chatTextFromComposer } from "./composer-commands";
 import { activeLocale, loadLocale, setLocale, t } from "./i18n";
 import {
   composerSlashTrigger,
@@ -115,5 +116,14 @@ describe("composer slash commands", () => {
       { name: "bare", description: "" },
     ]);
     expect(enabledSlashSkills(null)).toEqual([]);
+  });
+});
+
+describe("chatTextFromComposer", () => {
+  it("reads /chat and its text, and nothing else", () => {
+    expect(chatTextFromComposer("/chat làm trang chủ")).toBe("làm trang chủ");
+    expect(chatTextFromComposer("/CHAT")).toBe("");
+    expect(chatTextFromComposer("/chatty")).toBeNull();
+    expect(chatTextFromComposer("hello /chat")).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { blankCode, offersSkillCommand } from "../../shared/skill-command";
 
-export type ComposerSlashCommandId = "goal" | "learn" | "setup";
+export type ComposerSlashCommandId = "goal" | "chat" | "learn" | "setup";
 
 export type ComposerSlashCommand =
   | { kind: "command"; id: ComposerSlashCommandId; label: `/${ComposerSlashCommandId}`; description: string }
@@ -37,6 +37,12 @@ export function composerSlashTrigger(text: string, caretInput: number): Composer
   const query = match[1] ?? "";
   const start = caret - query.length - 1;
   return blankCode(text)[start] === "/" ? { query, start, end: caret } : null;
+}
+
+/** `/chat text` sends `text` as ordinary chat even where the room would run a work request as a goal. */
+export function chatTextFromComposer(text: string): string | null {
+  const match = /^\/chat(?:\s+([\s\S]*))?$/i.exec(text);
+  return match ? (match[1] ?? "").trimStart() : null;
 }
 
 export function goalTextFromComposer(text: string): string | null {

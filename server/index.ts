@@ -3705,6 +3705,10 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     const memberIds = (patch.memberIds as string[] | undefined) ?? existing.memberIds;
     patch.roles = checkedTeamRoles(body.roles, memberIds);
   }
+  if (body.autoGoal !== undefined) {
+    if (body.autoGoal !== null && typeof body.autoGoal !== "boolean") throw Object.assign(new Error("autoGoal must be true, false or null"), { status: 400 });
+    patch.autoGoal = body.autoGoal ?? undefined;
+  }
   if (body.goalWaves !== undefined) {
     if (typeof body.goalWaves !== "boolean") throw Object.assign(new Error("goalWaves must be true or false"), { status: 400 });
     patch.goalWaves = body.goalWaves ? undefined : false;

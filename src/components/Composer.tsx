@@ -86,6 +86,7 @@ import { mentionChoicesForQuery, mentionQueryAt } from "@/lib/mentions"; import 
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
   composerSlashTrigger,
+  chatTextFromComposer,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
   skillSlashCommands,
@@ -286,7 +287,8 @@ export function Composer({
     return route.ambiguous || (route.responders.length > 0 && route.responders.every(botSupportsImages));
   };
   const typedGoalText = !group?.dm ? goalTextFromComposer(text) : null;
-  const effectiveText = typedGoalText ?? text;
+  const typedChatText = group && !group.dm && typedGoalText === null ? chatTextFromComposer(text) : null;
+  const effectiveText = typedGoalText ?? typedChatText ?? text;
   const effectiveChannelMode = typedGoalText !== null ? "goal" : channelMode;
   const engineSupportsImages = imageTargetsSupport(effectiveText, effectiveChannelMode);
 
@@ -304,6 +306,12 @@ export function Composer({
       id: "goal",
       label: "/goal",
       description: t(group ? "composer.command.goalDesc" : "composer.command.goalBotDesc"),
+    });
+    if (builtIns && group && !group.dm) available.push({
+      kind: "command",
+      id: "chat",
+      label: "/chat",
+      description: t("composer.command.chatDesc"),
     });
     if (builtIns && canLearn) {
       available.push({
@@ -384,7 +392,7 @@ export function Composer({
     if (!slash || !command) return;
     const spaceAfter = /^\s/.test(text.slice(slash.end)) ? "" : " ";
     const replacement = command.kind === "skill" ? `${command.label}${spaceAfter}`
-      : command.id === "learn" ? "/learn " : command.id === "setup" ? "/setup " : "";
+      : command.id === "learn" ? "/learn " : command.id === "setup" ? "/setup " : command.id === "chat" ? "/chat " : "";
     const next = replaceComposerSlashTrigger(text, slash, replacement);
     editText(next.text);
     setCaret(next.caret);
@@ -575,7 +583,7 @@ export function Composer({
         sendId: sentDraft.sendId,
         replyToId: replyTo?.id,
         threadId,
-        mode: effectiveChannelMode, mentions: sentDraft.mentions,
+        mode: effectiveChannelMode, ...(typedChatText !== null ? { forceChat: true } : {}), mentions: sentDraft.mentions,
         onError: () => restoreDraft(sentDraft),
       });
       roomMessageSent(effectiveChannelMode, busy);

@@ -254,6 +254,16 @@ beforeAll(async () => {
         },
         config: { cli: FAKE_CLAUDE },
       },
+      autoLead: {
+        driver: "claudeAgent",
+        displayName: "Auto lead fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify(Array(6).fill("Done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Home page built.\"}</openmaus-goal>")),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "auto-lead-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
       sideLead: {
         driver: "claudeAgent",
         displayName: "Side lead fixture",
@@ -1432,5 +1442,31 @@ describe("goal-driven channel runs", () => {
       .filter((message: { kind: string; roomRequest?: { phase?: string } }) => message.kind === "activity" && message.roomRequest?.phase === "result")
       .map((message: { from?: { name?: string } }) => message.from?.name);
     expect(results).toEqual(["Role builder", "Role checker"]);
+  });
+
+  it("runs a work request as a goal in a room with a Lead, and /chat or a question as chat", async () => {
+    const make = async (name: string) => (await api("POST", "/api/bots", { name, modelSelection: { instanceId: "autoLead", model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const lead = await make("Auto lead");
+    const other = await make("Auto other");
+    const room = (await api("POST", "/api/groups", {
+      name: "Auto team", memberIds: [lead.id, other.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
+    const send = (text: string, sendId: string, extra: Record<string, unknown> = {}) => api("POST", `/api/groups/${room.id}/messages`, { text, sendId, ...extra });
+    const idle = () => expect.poll(async () => (await api("GET", "/api/bots?messages=40")).body.groups.find((g: { id: string }) => g.id === room.id)?.working, { timeout: hostTimeout(15_000) }).toBe(false);
+
+    expect((await send("làm trang chủ cho web", "auto_send_off_1234567890")).body.message).toMatchObject({ channelMode: "chat" });
+    await idle();
+    await api("PATCH", `/api/groups/${room.id}`, { roles: { [lead.id]: "lead", [other.id]: "worker" } });
+    expect((await send("làm trang chủ cho web", "auto_send_on_12345678901")).body.message).toMatchObject({ channelMode: "goal" });
+    await expect.poll(async () => (await api("GET", "/api/bots?messages=40")).body.groups.find((g: { id: string }) => g.id === room.id)
+      ?.messages.find((m: { kind: string }) => m.kind === "goal.run")?.goalRun?.status, { timeout: hostTimeout(15_000) }).toBe("completed");
+    await idle();
+    expect((await send("làm trang chủ cho web", "auto_send_chat_123456789", { forceChat: true })).body.message).toMatchObject({ channelMode: "chat" });
+    await idle();
+    expect((await send("tình hình sao rồi", "auto_send_ask_1234567890")).body.message).toMatchObject({ channelMode: "chat" });
+    await idle();
+    await api("PATCH", `/api/groups/${room.id}`, { autoGoal: false });
+    expect((await send("làm trang chủ cho web", "auto_send_sw_12345678901")).body.message).toMatchObject({ channelMode: "chat" });
   });
 });

@@ -163,7 +163,7 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
 
 export type GroupDefaultResponder = import("../../shared/wire").GroupDefaultResponder;
 
-export interface Group extends Pick<WireGroup, "memberContext" | "queue" | "goalWaves" | "roles"> {
+export interface Group extends Pick<WireGroup, "memberContext" | "queue" | "goalWaves" | "roles" | "autoGoal"> {
   usage?: GroupThreadUsage | null;
   id: string;
   threadId: string;
@@ -685,13 +685,13 @@ export type Action =
       sendId?: string;
       replyToId?: string;
       threadId?: string;
-      mode?: "chat" | "goal"; mentions?: string[];
+      mode?: "chat" | "goal"; forceChat?: boolean; mentions?: string[];
       onError?: () => void;
     }
   | {
       type: "patchGroup";
       groupId: string;
-      patch: Partial<Pick<Group, "name" | "bulletin" | "description" | "memberIds" | "defaultResponder" | "pinnedMessageId" | "section" | "goalWaves" | "roles">>;
+      patch: Partial<Pick<Group, "name" | "bulletin" | "description" | "memberIds" | "defaultResponder" | "pinnedMessageId" | "section" | "goalWaves" | "roles" | "autoGoal">>;
     }
   | { type: "deleteGroup"; groupId: string }
   | { type: "newGroupTask"; groupId: string }
@@ -2697,7 +2697,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 replyToId: action.replyToId,
                 threadId,
                 sendId,
-                mode: action.mode ?? "chat", ...(action.mentions?.length ? { mentions: action.mentions } : {}),
+                mode: action.mode ?? "chat", ...(action.forceChat ? { forceChat: true } : {}), ...(action.mentions?.length ? { mentions: action.mentions } : {}),
               }),
             }))
             .then((body) => {

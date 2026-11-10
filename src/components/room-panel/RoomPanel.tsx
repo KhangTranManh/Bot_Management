@@ -18,6 +18,7 @@ import { buttonCls, Card, ColRow, NavRow, PageHeader, roundButtonCls, rowCls, Ro
 import { sidePanelCls } from "../bot-panel/side-panel";
 import { ResponderPage } from "./ResponderPage";
 import { RoomStatus } from "./RoomStatus";
+import { autoGoalOn } from "../../../shared/auto-goal";
 
 /** Matches the server: goals plan parallel waves from three members. */
 const GOAL_WAVES_MIN_MEMBERS = 3;
@@ -221,6 +222,16 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
                   value={String(members.length)}
                   onClick={() => setMembersOpen(true)}
                 />
+                {!group.dm && (
+                  <SwitchRow
+                    data-panel-row="auto-goal"
+                    title={t("room.panel.autoGoal")}
+                    hint={t("room.panel.autoGoalHint")}
+                    checked={autoGoalOn(group)}
+                    color={members[0]?.color ?? "blue"}
+                    onChange={() => dispatch({ type: "patchGroup", groupId: group.id, patch: { autoGoal: !autoGoalOn(group) } })}
+                  />
+                )}
                 {members.length >= GOAL_WAVES_MIN_MEMBERS && (
                   <SwitchRow
                     data-panel-row="goal-waves"

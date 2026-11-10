@@ -14,6 +14,7 @@ import {
 import { DATA_DIR, type AppConfig } from "../config.ts";
 import type { ProviderInstance, SteerOutcome } from "../contracts.ts";
 import { cancelledChatFollowup } from "../message-db.ts";
+import { autoGoalOn, looksLikeWorkRequest } from "../../shared/auto-goal.ts";
 import { messageTextRefusal } from "../message-text.ts";
 import type { PhoneSecretSubmissionRegistry } from "../phone-secret.ts";
 import { promptWithReply, type PersonName } from "../replies.ts";
@@ -335,7 +336,9 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
       if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "goal") {
         return json(res, 400, { error: "mode must be chat or goal" });
       }
-      const channelMode: "chat" | "goal" = body.mode === "goal" ? "goal" : "chat";
+      if (body.forceChat !== undefined && typeof body.forceChat !== "boolean") return json(res, 400, { error: "forceChat must be true or false" });
+      const autoGoal = body.mode !== "goal" && body.forceChat !== true && !group.dm && autoGoalOn(group) && looksLikeWorkRequest(String(body.text ?? ""));
+      const channelMode: "chat" | "goal" = body.mode === "goal" || autoGoal ? "goal" : "chat";
       if (group.dm && channelMode === "goal") {
         return json(res, 400, { error: "goal mode is available in team channels, not bot-to-bot channels" });
       }
