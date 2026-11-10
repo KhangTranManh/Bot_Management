@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoGoalOn, looksLikeWorkRequest } from "./auto-goal.ts";
+import { autoGoalOn, looksLikeProgressQuestion, looksLikeWorkRequest } from "./auto-goal.ts";
 
 describe("looksLikeWorkRequest", () => {
   it("takes a request for work in Vietnamese or English", () => {
@@ -21,5 +21,14 @@ describe("autoGoalOn", () => {
     expect(autoGoalOn({ roles: { a: "lead" } })).toBe(true);
     expect(autoGoalOn({ autoGoal: false, roles: { a: "lead" } })).toBe(false);
     expect(autoGoalOn({ autoGoal: true })).toBe(true);
+  });
+});
+
+describe("looksLikeProgressQuestion", () => {
+  it("takes a short question about the work's progress", () => {
+    for (const text of ["tình hình sao rồi", "tiến độ thế nào?", "xong chưa", "làm tới đâu rồi", "status?", "how is it going"]) expect(looksLikeProgressQuestion(text), text).toBe(true);
+  });
+  it("leaves mentions, work requests and long messages alone", () => {
+    for (const text of ["@Clover tình hình sao rồi", "làm trang chủ cho web", `tình hình ${"rất ".repeat(30)}dài`]) expect(looksLikeProgressQuestion(text), text).toBe(false);
   });
 });

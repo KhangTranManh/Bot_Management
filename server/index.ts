@@ -234,6 +234,7 @@ import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
 import { roomNow } from "./room-now.ts";
+import { looksLikeProgressQuestion } from "../shared/auto-goal.ts";
 import type { MemberNow } from "../shared/room-now.ts";
 import { isTeamRole, type TeamRole } from "../shared/team-roles.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
@@ -434,7 +435,7 @@ import { ComputerIdleTimer } from "./computer-idle.ts";
 import { CLOUD_COMPUTER_DID_NOT_START, CLOUD_COMPUTER_START_BUDGET_MS, CLOUD_COMPUTER_STARTING, createCloudComputerPower } from "./host/cloud-computer-power.ts";
 import { LocalVmLease, LocalVmLeasePool } from "./local-vm-lease.ts";
 import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts";
-import { createLoopGuard, loopGuardSettings } from "./host/loop-guard.ts"; import { createPersonFirst } from "./host/person-first.ts";
+import { createLoopGuard, loopGuardSettings } from "./host/loop-guard.ts"; import { createPersonFirst, ranFor } from "./host/person-first.ts";
 import { claudeUserSkillsEnabled, settingsTurnFields } from "./turn-settings.ts";
 import { addHeldSecretScrubber, redactSecretsInText, scrubHeldSecrets } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
@@ -10957,12 +10958,48 @@ type StartGroupTurnOptions = {
 
 const SIDE_REPLY_MAX_TARGETS = 3;
 
+/** The room's work in plain lines, from the live goal card and each member's job now. */
+function roomProgressText(group: GroupRecord, threadId: string): string {
+  const language = threadLanguage(threadId);
+  const goal = [...store.messagesTail(threadId, 200).messages].reverse().find((message) => message.kind === "goal.run")?.goalRun;
+  const nameOf = (botId: string) => store.bot(botId)?.name ?? botId;
+  const lines = goal?.status === "working"
+    ? [serverLine(language, "server.rooms.progressGoal", { goal: goal.goal.slice(0, 120), turn: Math.min(goal.turnCount + 1, goal.maxTurns), max: goal.maxTurns })]
+    : [];
+  for (const row of roomNowFor(group, threadId)) {
+    if (row.state === "queued") {
+      lines.push(serverLine(language, "server.rooms.progressQueued", { bot: nameOf(row.botId), task: row.task }));
+      continue;
+    }
+    lines.push(serverLine(language, "server.rooms.progressRunning", { bot: nameOf(row.botId), task: row.task, time: ranFor(Date.now() - (row.since ?? Date.now())) }));
+    if (row.step) lines.push(serverLine(language, "server.rooms.progressStep", { bot: nameOf(row.botId), step: row.step }));
+  }
+  return lines.length > 0 ? lines.join("\n") : serverLine(language, "server.rooms.progressNone");
+}
+
+/** A person's short progress question while the room works, answered from what the harness knows without a bot turn. */
+function answerRoomProgress(groupId: string, threadId: string, text: string, replyTo: ReplyTarget | undefined, sendId: string | undefined,
+  options: StartGroupTurnOptions): Message | undefined {
+  const room = store.group(groupId);
+  if (!room || room.dm || !groupThreadIsWorking(groupId, threadId) || (options.mentions?.length ?? 0) > 0 || !looksLikeProgressQuestion(text)) return undefined;
+  const progress = roomProgressText(room, threadId);
+  const message = store.appendMessage(threadId, {
+    role: "user", kind: "text", text, replyToId: replyTo?.id, reaction: replyTo?.reactedWith, sendId,
+    channelMode: "chat", via: options.via, sender: options.sender,
+  });
+  store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: progress, ok: true } });
+  return message;
+}
+
 function roomNowFor(group: GroupRecord, threadId: string): MemberNow[] {
   const speaker = groupSpeakers.get(threadId);
-  const asked = speaker ? [...store.messagesTail(threadId, 30).messages].reverse().find((message) => message.role === "user" && message.text)?.text : undefined;
+  const request = speaker ? [...(groupTurnOperations.get(group.id) ?? [])].find((operation) => !operation.cancelled && operation.threadId === threadId && operation.requestMessageId)?.requestMessageId : undefined;
+  const recent = speaker ? [...store.messagesTail(threadId, 60).messages].reverse() : [];
+  const asked = (request ? recent.find((message) => message.id === request) : undefined)
+    ?? recent.find((message) => message.role === "user" && message.text && (speaker?.since === undefined || message.at <= speaker.since));
   return roomNow({
     groupId: group.id, roomThreadId: threadId, memberIds: group.memberIds, nodes: coordinator.active(), laneRoomThread,
-    ...(speaker ? { speaker: { botId: speaker.botId, ...(speaker.since ? { since: speaker.since } : {}), task: asked ?? "" } } : {}),
+    ...(speaker ? { speaker: { botId: speaker.botId, ...(speaker.since ? { since: speaker.since } : {}), task: asked?.text ?? "" } } : {}),
     latest: (lane) => {
       const last = store.messagesTail(lane, 1).messages.at(-1);
       if (!last || last.role !== "bot") return undefined;
@@ -12590,7 +12627,7 @@ ROUTES.push(createChannelRoutes({
   messagePage,
   resolveReplyTarget,
   runningTurnInstance,
-  startGroupTurn, startRoomSideReply, roomNowFor, engineSteersImages,
+  startGroupTurn, startRoomSideReply, answerRoomProgress, roomNowFor, engineSteersImages,
   applyRoomHoldsFromMessage,
   cancelGroupTurnOperations,
   drainQueuedChannelSends,

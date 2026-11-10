@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1433,6 +1433,16 @@ describe("goal-driven channel runs", () => {
     await expect.poll(async () => (await roomState())?.messages.some((message: { kind: string; from?: { name?: string }; roomRequest?: { phase?: string }; tool?: { ok?: boolean } }) =>
       message.kind === "activity" && message.roomRequest?.phase === "result" && message.from?.name === "Chat free" && message.tool?.ok === true), { timeout: hostTimeout(15_000) }).toBe(true);
     expect((await roomState())?.working).toBe(true);
+
+    const turnsBefore = readFileSync(join(home, "chat-free-replies.txt"), "utf8");
+    const progress = await api("POST", `/api/groups/${room.id}/messages`, { text: "tình hình sao rồi", sendId: "chat_send_progress_12345678" });
+    expect(progress.status).toBe(202);
+    expect(progress.body.queued).not.toBe(true);
+    const progressRow = (await roomState())?.messages.at(-1);
+    expect(progressRow).toMatchObject({ kind: "activity", tool: { ok: true } });
+    expect(progressRow.tool.name).toContain("Chat slow");
+    expect(progressRow.tool.name).toContain("build the thing");
+    expect(readFileSync(join(home, "chat-free-replies.txt"), "utf8")).toBe(turnsBefore);
 
     writeFileSync(chatSlowFinishGate, "release the slow turn");
     await expect.poll(async () => (await roomState())?.messages.some((message: { kind: string; role: string; text?: string }) =>

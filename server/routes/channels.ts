@@ -102,6 +102,15 @@ export interface ChannelRouteDeps {
   applyRoomHoldsFromMessage(groupId: string, text: string, mentions?: readonly string[]): void;
   /** What each member is doing right now for this room thread. */
   roomNowFor(group: GroupRecord, threadId: string): MemberNow[];
+  /** Answers a progress question while the room works, without a bot turn; undefined when the message is not one. */
+  answerRoomProgress(
+    groupId: string,
+    threadId: string,
+    text: string,
+    replyTo: Message | undefined,
+    sendId: string | undefined,
+    options: { via?: "api"; sender?: ResolvedSender; trigger?: UsageTrigger; mentions?: string[] },
+  ): Message | undefined;
   cancelGroupTurnOperations(groupId: string, threadId: string): void;
   drainQueuedChannelSends(): void;
   clearTurnDigestState(threadId: string): void;
@@ -118,7 +127,7 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
     store, cfg, broadcast, notificationListed, actorKey, threadStarters, phoneSecretSubmissions, sendSequencer, roomMemberContexts, skillReview,
     groupSpeakers, groupTurnOperations, lastReply, cloudThreadRefusal, messageSender, usageTriggerFor, publicGroupState,
     groupWithThread, updateChannel, groupIsWorking, groupThreadIsWorking, readCursor, pageSize, messagePage,
-    resolveReplyTarget, runningTurnInstance, startGroupTurn, startRoomSideReply, engineSteersImages, applyRoomHoldsFromMessage, roomNowFor, cancelGroupTurnOperations,
+    resolveReplyTarget, runningTurnInstance, startGroupTurn, startRoomSideReply, engineSteersImages, applyRoomHoldsFromMessage, roomNowFor, answerRoomProgress, cancelGroupTurnOperations,
     drainQueuedChannelSends, clearTurnDigestState, closeOpenApprovals, revokeInternalCapabilitiesForThread,
     stagedSkillCleanupsForThread, rejectDeletedThreadSkillStages,
   } = deps;
@@ -427,6 +436,8 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
           const threadWorking = groupThreadIsWorking(current.id, threadId);
           const decision = admit("room", {}, { roomWorking: threadWorking, threadWorking });
           if (decision.action === "queue") {
+            const progress = channelMode === "chat" ? answerRoomProgress(current.id, threadId, text, replyTo, sendId, { via, sender: messageSender(auth), trigger, mentions }) : undefined;
+            if (progress) return { ok: true as const, threadId, message: progress };
             const side = channelMode === "chat" ? startRoomSideReply(current.id, threadId, text, replyTo, sendId, { via, sender: messageSender(auth), trigger, mentions }) : undefined;
             if (side) return { ok: true as const, threadId, message: side };
             const queued = queueChannelMessage(current.id, threadId, text, {

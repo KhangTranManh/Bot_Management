@@ -14,3 +14,11 @@ export function looksLikeWorkRequest(text: string): boolean {
 export function autoGoalOn(room: { autoGoal?: boolean; roles?: Readonly<Record<string, TeamRole>> }): boolean {
   return room.autoGoal ?? Object.values(room.roles ?? {}).includes("lead");
 }
+
+const PROGRESS_QUESTION = /(tình hình|tiến độ|tiến triển|đang làm gì|làm tới đâu|tới đâu rồi|đến đâu rồi|xong chưa|sao rồi|\bstatus\b|\bprogress\b|how(?:'s| is) it going|where are we|what(?:'s| is) everyone doing)/iu;
+
+/** A short question about how the room's work is going, naming no one. */
+export function looksLikeProgressQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.length <= 80 && !/(^|\s)@\S/u.test(trimmed) && PROGRESS_QUESTION.test(trimmed);
+}
