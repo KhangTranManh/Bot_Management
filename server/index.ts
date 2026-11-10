@@ -49,7 +49,7 @@ import { isPendingSignInRequest, normalizeSignInSite, signInOutcome, signInResum
 import { createRoomTurnLevels } from "./room-turn-level.ts";
 import { createSignInSettle } from "./host/sign-in-settle.ts"; import { createPersonLanguages, THIS_COMPUTER } from "./host/person-languages.ts"; import "./server-line-packs.ts"; import { conversationLanguage, serverLine, setConversationLanguage } from "./server-lines.ts";
 import { RoomMemberLock } from "./room-member-lock.ts";
-import { approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval, undeliveredApprovalTool } from "./auto-approve.ts"; import { readsOwnFiles } from "./own-file-reads.ts";
+import { approvalHeldNote, approvalHeldReason, approvalModeForOrigin, approvalModeUnderCeiling, autoVerdict, deliverFullAccessApproval, undeliveredApprovalTool } from "./auto-approve.ts"; import { readsOwnFiles } from "./own-file-reads.ts"; import { roleCeilingEnabled } from "./role-ceiling.ts";
 import { bindSafetyFloor, denyAtSafetyFloor, heldAtSafetyFloor, safetyFloorOn } from "./safety-floor-gate.ts";
 import { CommandAllowlistStore, commandAllowlistCandidate } from "./command-allowlist.ts";
 import { providerMcpTool, providerToolAllowKey } from "./provider-tool-allow.ts";
@@ -3094,7 +3094,11 @@ function sourceApprovalMode(botId: string, threadId: string): ApprovalMode {
   const owner = connectorThread(botId, threadId);
   if (!owner) return "ask";
   const bot = store.projectBotForTask(botId, threadId) ?? owner.bot;
-  return approvalModeForTurn(bot, false, threadId);
+  const mode = approvalModeForTurn(bot, false, threadId);
+  if (!roleCeilingEnabled()) return mode;
+  // A coordinated turn never sources Full access above the level its node records.
+  const node = coordinator.runningIn(threadId).find((candidate) => candidate.botId === botId);
+  return approvalModeUnderCeiling(mode, node?.level, registry.cliTarget(bot.modelSelection.instanceId)?.driverKind);
 }
 
 function fullAccessForSource(botId: string, threadId: string): boolean {
@@ -3120,7 +3124,10 @@ const liveApprovalMode = createLiveApprovalMode({ store, turnLevel: approvalMode
 
 function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: GroupTurnOrchestration): ApprovalMode {
   const handoff = orchestration?.roomHandoffId ? coordinator.node(orchestration.roomHandoffId) : undefined;
-  return delegatedLevel.roomTurn(bot, threadId, handoff?.parentId ? coordinator.node(handoff.parentId) : undefined);
+  const mode = delegatedLevel.roomTurn(bot, threadId, handoff?.parentId ? coordinator.node(handoff.parentId) : undefined);
+  if (!roleCeilingEnabled()) return mode;
+  // The Chief's lift is computed first; the node's own recorded level only lowers it further.
+  return approvalModeUnderCeiling(mode, handoff?.level, registry.cliTarget(bot.modelSelection.instanceId)?.driverKind);
 }
 
 /** Custom transitions never go over loopback HTTP (a bot's shell could curl it); only Electron's private utility-process channel delivers them. */
@@ -6513,7 +6520,12 @@ bus.subscribe((event: RuntimeEvent) => {
       const unattended = permission && asker && event.requestId ? isUnattended(asker.id, event.threadId) : false;
       // No command the owner saved answers for a guest-driven turn.
       const guestDriven = cloudGuestDriven(event.threadId) || botApiThread(event.threadId);
-      const ownApprovalMode = (who: BotRecord) => liveApprovalMode(who, event.threadId, isInternalTurn(event.threadId));
+      const ownApprovalMode = (who: BotRecord) => {
+        const mode = liveApprovalMode(who, event.threadId, isInternalTurn(event.threadId));
+        if (!roleCeilingEnabled()) return mode;
+        const node = coordinator.runningIn(event.threadId).find((candidate) => candidate.botId === who.id);
+        return approvalModeUnderCeiling(mode, node?.level, registry.cliTarget(who.modelSelection.instanceId)?.driverKind);
+      };
       const effectiveApprovalMode = !asker || guestDriven ? "ask"
         : group && speaker?.botId === asker.id ? roomTurnLevels.forRequest(event.threadId, asker.id, () => ownApprovalMode(asker))
           : ownApprovalMode(asker);
@@ -8383,6 +8395,10 @@ async function beginTurn(
         coordinationNode.parentId ? coordinator.node(coordinationNode.parentId) : undefined))) {
         throw new DirectTurnSetupCancelled("Coordination access changed before dispatch");
       }
+      // A coordinated turn never runs above the level its node records; the Chief's lift is upstream of this cap.
+      const driverKind = registry.cliTarget(bot.modelSelection.instanceId)?.driverKind;
+      const coordinationCeiling = roleCeilingEnabled() ? coordinationNode?.level : undefined;
+      const turnApproval = approvalModeUnderCeiling(approvalModeForTurn(bot, commsDepth > 0, threadId), coordinationCeiling, driverKind);
       // The tool bridge is decided here: the folder the turn is launched in is known, and the prompt is not built yet.
       applyAgentsBridge(threadId, integrations, cfg, bot, turnEngine(instance, providerConfigs(), registry.lastSnapshot(instance.instanceId), cwd));
       const confined = proactive.fence.confines(threadId), apiFenced = botApiThread(threadId); if (confined || apiFenced) for (const key of Object.keys(integrations) as Array<keyof typeof integrations>) if (!(apiFenced ? BOT_API_TOOLS : READ_AND_DRAFT_TOOLS).has(key)) delete integrations[key];
@@ -8412,7 +8428,7 @@ async function beginTurn(
         { id: "assignment", label: "Teammate task", text: coordinationNode?.parentId ? `\n${coordinationSystemInstructions()}` : "" },
         { id: "outstanding", label: "Outstanding teammate work", text: teammatePrompts.outstanding(threadId) },
         { id: "teammate-questions", label: "Teammates' questions to the person", text: teammatePrompts.questions(liveBot ?? bot, threadId) },
-        { id: "credential", label: "Credentials", text: credentialPrompt }, { id: "just-do-it", label: "Just do it", text: approvalModeForTurn(bot, commsDepth > 0, threadId) === "full" && !isUnattended(bot.id, threadId) && coordinationNode?.origin?.kind !== "outside" ? JUST_DO_IT_PROMPT : "" },
+        { id: "credential", label: "Credentials", text: credentialPrompt }, { id: "just-do-it", label: "Just do it", text: turnApproval === "full" && !isUnattended(bot.id, threadId) && coordinationNode?.origin?.kind !== "outside" ? JUST_DO_IT_PROMPT : "" },
         { id: "recall", label: "Recall", text: recallPrompt },
         { id: "routine", label: "Routines", text: routinePrompt },
         { id: "active-routines", label: "Active automations", text: integrations.agents && !confined && (!CLOUD_HOME || cloudOwnerOnlyThread(threadId)) ? activeRoutinesContext({
@@ -8465,8 +8481,8 @@ async function beginTurn(
         text: withTurnClock(clock, withRecalled(recalled, attachmentsForBox(dispatchContext.turnText, cwd) + shareNote.text + devsReports.note(threadId, Boolean(integrations.agents)))),
         ...(recalled ? { recalled } : {}),
         images: dispatchContext.images,
-        approvalMode: approvalModeForTurn(bot, commsDepth > 0, threadId),
-        approvalModeNow: () => liveApprovalMode(bot, threadId, commsDepth > 0),
+        approvalMode: turnApproval,
+        approvalModeNow: () => approvalModeUnderCeiling(liveApprovalMode(bot, threadId, commsDepth > 0), coordinationCeiling, driverKind),
         toolScope,
         ...(guestConfined ? { guestConfined: true, confinedWhy: botApiThread(threadId) ? serverLine(threadLanguage(threadId), "server.botApi.confinedWhy") : confinedWhy(threadId) } : {}),
         model,

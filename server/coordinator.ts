@@ -56,6 +56,8 @@ export interface HandoffView {
   mode: Mode;
   /** resume: the requester is woken; poll: it reads its inbox; none: nothing comes back. */
   reply: Reply;
+  /** The level this assignment runs at (consult forces Ask at enqueue); a turn never runs above it. */
+  level?: Level;
   outcome?: Outcome;
   outcomeDetail?: string;
   question?: string;

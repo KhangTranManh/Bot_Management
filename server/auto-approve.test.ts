@@ -7,6 +7,7 @@ import {
   approvalHeldNote,
   approvalHeldReason,
   approvalModeForOrigin,
+  approvalModeUnderCeiling,
   autoVerdict,
   deliverFullAccessApproval,
   delegatedApprovalMode,
@@ -217,5 +218,30 @@ describe("delegatedApprovalMode", () => {
     // Codex has no Auto-accept edits (its Ask already writes the workspace).
     expect(delegatedApprovalMode({ ...base, senderMode: "edits", recipientDriverKind: "codex" })).toBeNull();
     expect(delegatedApprovalMode({ ...base, senderMode: "auto", recipientDriverKind: "codex" })).toBe("auto");
+  });
+});
+
+describe("approvalModeUnderCeiling", () => {
+  it("keeps a mode at or below the ceiling, and never raises", () => {
+    expect(approvalModeUnderCeiling("full", "full", "claudeAgent")).toBe("full");
+    expect(approvalModeUnderCeiling("edits", "auto", "claudeAgent")).toBe("edits");
+    expect(approvalModeUnderCeiling("ask", "full", "claudeAgent")).toBe("ask");
+  });
+  it("caps a Full-access bot at the node's recorded level", () => {
+    expect(approvalModeUnderCeiling("full", "ask", "claudeAgent")).toBe("ask");
+    expect(approvalModeUnderCeiling("full", "auto", "claudeAgent")).toBe("auto");
+    expect(approvalModeUnderCeiling("auto", "edits", "claudeAgent")).toBe("edits");
+  });
+  it("steps down to the next level the engine runs", () => {
+    expect(approvalModeUnderCeiling("full", "edits", "codex")).toBe("ask");
+    expect(approvalModeUnderCeiling("full", "edits", undefined)).toBe("ask");
+    expect(approvalModeUnderCeiling("full", "edits", "claudeAgent")).toBe("edits");
+  });
+  it("custom on either side keeps the bot's own mode", () => {
+    expect(approvalModeUnderCeiling("full", "custom", "codex")).toBe("full");
+    expect(approvalModeUnderCeiling("custom", "ask", "codex")).toBe("custom");
+  });
+  it("no ceiling keeps the bot's own mode", () => {
+    expect(approvalModeUnderCeiling("full", undefined, "claudeAgent")).toBe("full");
   });
 });

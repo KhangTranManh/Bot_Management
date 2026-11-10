@@ -5,15 +5,20 @@ Nhãn: **CỨNG** = server chặn thật; **MỀM** = nằm trong prompt/playboo
 
 ## 1. Lỗi đã biết, cần sửa trước
 
-### 1.1 Bước 1.2 ("consult chạy ở mức ask") không chặn thật — MỀM, đã báo nhầm là CỨNG
+### 1.1 Bước 1.2 ("consult chạy ở mức ask") không chặn thật — ĐÃ VÁ (B0(i), 2026-11-10, flag `OMB_ROLE_CEILING=1`)
 - `levelOf` chỉ ghi mức vào node và envelope (`server/coordinator.ts:149`, `server/host/delegated-level.ts:81-86`).
 - Lượt chạy thật gửi `approvalMode: approvalModeForTurn(bot, …)` (`server/index.ts:8468`, định nghĩa `:3083`),
   tức mức riêng của bot; `approvalModeNow` (`:8469`) cũng vậy.
 - App còn tự duyệt hộ khi bot ở `full`: `autoApply: fullAccessForSource` (`server/index.ts:9634`, `:3100`).
 - Hệ quả: Reviewer và lane trả lời phụ (side reply) vẫn chạy ở mức của chính bot. README đang ghi sai "Reviewers read only".
 - Test của commit `fc8ff3d06` chỉ kiểm phần ghi chép, nên không bắt được.
-- Cách sửa (B0(i) ở mục 3): trần quyền theo vai áp ở cả hai chỗ trên; lượt con tra vai/chế độ qua
-  `coordination.id` (`server/index.ts:3896`, `:4082`).
+- **Đã vá:** `HandoffView.level` (projection từ `Assignment.level`), `approvalModeUnderCeiling`
+  (`server/auto-approve.ts` — chỉ hạ, không nâng; custom một bên giữ mức riêng; đi xuống mức engine chạy được),
+  gắn tại 4 chỗ: dispatch trực tiếp + `approvalModeNow` + just-do-it (`server/index.ts:8468-8469`, `:8415`),
+  room `roomTurnApprovalMode` (`:3121`, cap sau lift Chief), tự duyệt `request.opened` (`:6516`) và
+  `sourceApprovalMode` (`:3093`, qua `coordinator.runningIn`). Flag off = hành vi cũ.
+- E2E: `server/role-ceiling.e2e.test.ts` — consult bot `full` chạy `default` khi ON / `bypassPermissions`
+  khi OFF; Chief lift vẫn nâng bot Ask khi ON. README "Reviewers read only" đúng sau khi bật flag (B13 còn đợi).
 
 ### 1.2 Repo có file không nên commit (commit `0b987b228` "d", chưa push)
 - `..dist/` (278 file build, ~25 MB) và `test-server-data/` (29 file: `bots.json`, `messages.db`, `runtime.db`,

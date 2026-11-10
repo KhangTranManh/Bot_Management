@@ -178,6 +178,7 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   for (const key of ["OMB_WARM_SUMMARY_TIME_SCALE", "OMB_WARM_SUMMARY"]) if (parentEnv[key]) childEnv[key] = parentEnv[key];
   // A loopback fake only: the key never reaches a real provider.
   if (parentEnv.OMB_LEAD_DEPT_CAP) childEnv.OMB_LEAD_DEPT_CAP = parentEnv.OMB_LEAD_DEPT_CAP;
+  if (parentEnv.OMB_ROLE_CEILING) childEnv.OMB_ROLE_CEILING = parentEnv.OMB_ROLE_CEILING;
   const liveUrl = parentEnv.OMB_OPENAI_LIVE_URL?.trim() ?? "";
   if (/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(liveUrl)) {
     childEnv.OMB_OPENAI_LIVE_URL = liveUrl;

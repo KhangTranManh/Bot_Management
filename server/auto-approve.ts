@@ -36,6 +36,19 @@ export function approvalModeForOrigin(mode: ApprovalMode, origin: { peerInitiate
 /** Custom is a provider config of its own and is never compared. */
 const LEVEL_RANK: Partial<Record<ApprovalMode, number>> = { ask: 0, edits: 1, auto: 2, full: 3 };
 
+/** A turn never runs above the level its coordination node records: a ceiling only lowers, never raises, and
+ * custom on either side keeps the bot's own mode (custom has no rank). Falls through levels the engine cannot run. */
+export function approvalModeUnderCeiling(own: ApprovalMode, ceiling: ApprovalMode | undefined, driverKind?: string): ApprovalMode {
+  const cap = ceiling === undefined ? undefined : LEVEL_RANK[ceiling];
+  const ownRank = LEVEL_RANK[own];
+  if (cap === undefined || ownRank === undefined || cap >= ownRank) return own;
+  for (const mode of ["full", "auto", "edits"] as const) {
+    if (LEVEL_RANK[mode]! > cap) continue;
+    if (supportsApprovalMode(driverKind, mode)) return mode;
+  }
+  return "ask";
+}
+
 /** A Chief of Staff's level flows down: only a Chief's, only from the conversation it delegates from, only upward, and capped
  * at what the teammate's engine implements. A bot never raises itself this way; null keeps the teammate's own. */
 export function delegatedApprovalMode(input: {
