@@ -40,3 +40,7 @@ deploy/podman/.env
 deploy/podman/.env.*
 !deploy/podman/.env.example
 /.env
+
+# Stray build output and local test data (never meant to be tracked)
+..dist/
+test-server-data/
