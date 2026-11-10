@@ -9356,6 +9356,7 @@
   "serverError.computer.notReadyMacPermission": "OpenMausBot 目前還無法使用這台電腦 — {reason}。授予缺少的 macOS 權限後，請重新啟動 OpenMausBot。",
   "chat.notice.copilotAccountRefused": "GitHub Copilot 拒絕了已登入帳號的這個請求。請檢查它的 Copilot 方案和進階請求額度，然後再試一次。",
   "chat.notice.commandCodeAccountRefused": "Command Code 拒絕了已登入帳號的這個請求。請在 commandcode.ai 檢查方案和額度，然後再試一次。",
+  "chat.notice.zcodeAccountRefused": "ZCode 拒絕了已登入帳號的這個請求。請檢查 Coding Plan 和額度，然後再試一次。",
   "chat.notice.acpQuietUsageLimit": "{name} 已達到使用上限{said}，正在等待重設而沒有回覆，因此這個回合已停止。",
   "chat.notice.acpQuietStuck": "{name} 已經 {quiet} 沒有傳送任何內容，沒有工具在執行、沒有對模型的未完成請求，也沒有使用 CPU，因此這個回合被視為卡住而停止。請再傳送一次訊息重試。",
   "chat.notice.acpModelRequestFailed": "{name} 的模型請求失敗：「{message}」{name} 可能會重試或停止；目前已 {quiet} 沒有回覆。",

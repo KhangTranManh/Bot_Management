@@ -273,6 +273,8 @@ const dumpEnv = Object.fromEntries(
     "GITHUB_TOKEN",
     "COMMAND_CODE_API_KEY",
     "KIRO_API_KEY",
+    "ZCODE_ACP_MODE",
+    "ZCODE_ACP_SHOW_COMPLETION_STATUS",
   ].flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]]] as const)),
 );
 const dumpState: Record<string, unknown> = { argv, env: dumpEnv, pid: process.pid };

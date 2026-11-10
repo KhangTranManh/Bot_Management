@@ -30,6 +30,8 @@ export const ENGINE_VERSIONS: Readonly<Record<string, EngineVersionPin>> = {
   clineAgent: { target: "3.0.74", minimum: "3.0.70", acp: ["--acp", "--auto-approve", "false"] },
   copilotAgent: { target: "1.0.106", minimum: "1.0.103", acp: ["--acp", "--stdio"] },
   commandCodeAgent: { target: "1.88.4", minimum: "1.88.4", acp: ["acp"] },
+  // zcode-acp-server 0.83.1 speaks ACP from the bin itself; no extra arguments.
+  zcodeAgent: { target: "0.83.1", minimum: "0.83.1", acp: [] },
   piAgent: { target: "1.5.0", minimum: "1.5.0" },
   minimax: { target: "1.0.28", minimum: "1.0.28" },
   deepseekAgent: { target: "0.2.2-rc.1", minimum: "0.2.1-rc.2", acp: ["--profile", "acp"] },
