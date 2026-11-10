@@ -25,19 +25,20 @@ export function teamPlanProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId
   return undefined;
 }
 
-/** Why a plan breaks the vendor rule: a Reviewer's model vendor must differ from every Worker's
- * in the same plan; "unknown" is never treated as different. */
+/** Why a plan breaks the vendor rule: a Reviewer's or Evaluator's model vendor must differ from every
+ * Worker's in the same plan; "unknown" is never treated as different. */
 export function teamVendorProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId: string; name: string }>, roleOf: (botId: string) => TeamRole | undefined, vendorOf: (botId: string) => string | undefined): string | undefined {
   const workers = tasks.filter(({ botId }) => roleOf(botId) === "worker");
   for (const { plan, botId, name } of tasks) {
-    if (roleOf(botId) !== "reviewer") continue;
-    const reviewerVendor = vendorOf(botId);
+    const role = roleOf(botId);
+    if (role !== "reviewer" && role !== "evaluator") continue;
+    const checkVendor = vendorOf(botId);
     for (const worker of workers) {
       const workerVendor = vendorOf(worker.botId);
-      if (reviewerVendor === undefined || workerVendor === undefined || reviewerVendor === UNKNOWN_VENDOR || workerVendor === UNKNOWN_VENDOR) {
-        return `task ${plan.id} for Reviewer ${name} runs on an unknown model vendor; pick engines whose vendor is known so the reviewer differs from the Workers`;
+      if (checkVendor === undefined || workerVendor === undefined || checkVendor === UNKNOWN_VENDOR || workerVendor === UNKNOWN_VENDOR) {
+        return `task ${plan.id} for ${role === "evaluator" ? "Evaluator" : "Reviewer"} ${name} runs on an unknown model vendor; pick engines whose vendor is known so it differs from the Workers`;
       }
-      if (reviewerVendor === workerVendor) return `task ${plan.id} for Reviewer ${name} runs on the same model vendor (${reviewerVendor}) as Worker ${worker.name}; a reviewer must run a different vendor than the work it reviews`;
+      if (checkVendor === workerVendor) return `task ${plan.id} for ${role === "evaluator" ? "Evaluator" : "Reviewer"} ${name} runs on the same model vendor (${checkVendor}) as Worker ${worker.name}; it must run a different vendor than the work it judges`;
     }
   }
   return undefined;
@@ -64,6 +65,7 @@ export function withTesterTask(plan: readonly LeadTaskPlan[], roleOf: (assignee:
 export function teamRoleRule(role: TeamRole | undefined): string | undefined {
   if (role === "tester") return "You are this room's Tester: change no source files. Run the checks, then end your reply with exactly one line: VERDICT: PASS or VERDICT: FAIL.";
   if (role === "reviewer") return "You are this room's Reviewer: read and review only, change no files, and list concrete problems by file.";
+  if (role === "evaluator") return "You are this room's Evaluator: run only the evaluation steps the assignment and the goal file name, quote results as file references, and change no source files.";
   if (role === "worker") return "You are a Worker: change only the files your assignment lists, and say exactly what you changed.";
   return undefined;
 }

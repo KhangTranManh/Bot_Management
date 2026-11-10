@@ -287,6 +287,16 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   vendorOf?(botId: string): string | undefined;
   /** Research rooms: the goal file's wall-clock budget; past it the run stops (a negative result is still valid). */
   budgetWallMinutes?: number;
+  /** Research rooms: the goal file's pilot gate, GPU handoff files and held-out paths (B3/B6/B11). */
+  researchRules?: {
+    heldOutPaths?: readonly string[];
+    pilotMaxTasks?: number;
+    handoffExpectsFiles?: readonly string[];
+  };
+  /** Held-out paths mentioned in a member's event log (B3, detected after the fact); undefined disables the scan. */
+  scanHeldOut?(botId: string): Promise<string[]>;
+  /** Files the goal file's GPU handoff expects that are missing from the room folder (B11). */
+  missingHandoffFiles?(): Promise<string[]>;
   /** One member turn; a step counts against the run's turns once its member is claimed. A `lane` thread lets
    * wave tasks run beside each other, one provider turn per thread. */
   step(bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult>;
@@ -352,6 +362,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   const roleOf = (botId: string): TeamRole | undefined => roles?.[botId];
   const tester = roles ? goalMembers.find((member) => !member.hidden && roles[member.id] === "tester") : undefined;
   const team = { untested: false, fixRounds: 0, planRefusals: 0, earlyCompletions: 0 };
+  let planSeen = false;
   /** Members whose AI ran out of usage during this run: no more tasks go to them. */
   const outOfRun = new Set<string>();
   /** Takes a member out of the run for its usage limit and names who can take its task; a reason means the run stops. */
@@ -451,6 +462,14 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       coordinatorNote = "Not done yet: the latest changes have not passed the tester. Plan a tester task, or fix what the tester reported.";
       continue;
     }
+    if (decision.status === "completed" && deps.researchRules?.handoffExpectsFiles?.length && deps.missingHandoffFiles) {
+      // B11 GPU handoff: the files the goal file expects must be in the room folder before the run may end.
+      const missing = await deps.missingHandoffFiles();
+      if (missing.length) {
+        deps.finish("needs-input", `The GPU handoff is missing files the goal file expects: ${missing.slice(0, 8).join(", ")}. Place them in the room's folder, then send the goal again — the work so far is kept.`);
+        return;
+      }
+    }
     if (decision.status === "completed" && deps.verify?.length) {
       const failures: string[] = [];
       for (const command of deps.verify) {
@@ -491,11 +510,17 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
         planned.push({ plan: task, bot });
       }
       const outTask = planned.find(({ bot }) => outOfRun.has(bot.id));
-      const problem = outTask
-        ? `task ${outTask.plan.id} goes to ${outTask.bot.name}, whose AI ran out of usage in this run`
-        : roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf)
-          ?? (deps.vendorOf ? teamVendorProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf, deps.vendorOf) : undefined)
+      // B6 pilot gate: a research room's first plan is a pilot, bounded by the goal file.
+      const pilotProblem = !planSeen && deps.researchRules?.pilotMaxTasks !== undefined && decision.tasks.length > deps.researchRules.pilotMaxTasks
+        ? `the pilot plan may schedule at most ${deps.researchRules.pilotMaxTasks} task(s) (goal file); run the rest after the pilot holds`
         : undefined;
+      planSeen = true;
+      const problem = pilotProblem
+        ?? (outTask
+          ? `task ${outTask.plan.id} goes to ${outTask.bot.name}, whose AI ran out of usage in this run`
+          : roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf)
+            ?? (deps.vendorOf ? teamVendorProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf, deps.vendorOf) : undefined)
+          : undefined);
       if (problem) {
         team.planRefusals += 1;
         if (team.planRefusals >= 3) {
@@ -613,6 +638,16 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
               }
             }
           }
+          // B3 held-out paths: a member's event log mentioning them is reported after the fact.
+          if (deps.researchRules?.heldOutPaths?.length && deps.scanHeldOut) {
+            for (const { entry, result } of results) {
+              if (!result.ran || deps.cancelled()) continue;
+              const mentioned = await deps.scanHeldOut(entry.bot.id);
+              if (mentioned.length) {
+                deps.note(`${entry.bot.name} touched held-out paths: ${mentioned.slice(0, 5).join(", ")}`);
+              }
+            }
+          }
           if (coordinatorNote) break waveLoop;
         }
       }
@@ -700,6 +735,12 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
     }
     const stop = settle(workerBot, workerResult.replyText,
       outsideWrites?.length && testerVerdict(workerResult.replyText) === "pass" ? outsideWrites : undefined);
+    if (deps.researchRules?.heldOutPaths?.length && deps.scanHeldOut && workerResult.ran && !deps.cancelled()) {
+      const mentioned = await deps.scanHeldOut(workerBot.id);
+      if (mentioned.length) {
+        deps.note(`${workerBot.name} touched held-out paths: ${mentioned.slice(0, 5).join(", ")}`);
+      }
+    }
     if (stop) {
       deps.finish("blocked", stop);
       return;

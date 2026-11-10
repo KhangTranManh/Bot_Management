@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
 /** A research room's preregistered goal file (NOTE.md B2/B8, §8.8): the person writes it, the server
@@ -19,6 +19,12 @@ export const researchGoalSchema = z.object({
   }),
   /** The wall-clock budget the server guards; running out is a valid negative result, not a crash. */
   budget: z.object({ wallMinutes: z.number().positive() }),
+  /** B6 pilot gate: the run's first plan may schedule at most this many tasks. */
+  pilot: z.object({ maxTasks: z.number().int().positive() }).optional(),
+  /** B11 GPU handoff: the Lead may not call completed while these files are missing from the room folder. */
+  handoff: z.object({ expectsFiles: z.array(z.string().min(1)).min(1).max(16) }).optional(),
+  /** B7 ledger: JSON-lines file the server appends its own guard events to; default "ledger.jsonl". */
+  ledgerFile: z.string().min(1).max(120).optional(),
   maxExperimentRounds: z.number().int().positive().optional(),
   stopAfterFlatRounds: z.number().int().positive().optional(),
   /** The completion checks (B0(ii)) — in a research room these come from here, never from the Lead. */
@@ -62,4 +68,14 @@ export function loadResearchGoal(absPath: string): LoadedResearchGoal {
 /** The server's wall-clock budget guard (B7): true once the goal has run longer than the file allows. */
 export function researchBudgetExceeded(elapsedMs: number, wallMinutes: number): boolean {
   return elapsedMs > wallMinutes * 60_000;
+}
+
+/** The server's own line in the research ledger (B7): guard events the bots cannot write or rewrite. */
+export function appendResearchLedger(ledgerPath: string, entry: Record<string, unknown>): void {
+  try {
+    if (!existsSync(ledgerPath)) appendFileSync(ledgerPath, "", { mode: 0o600 });
+    appendFileSync(ledgerPath, `${JSON.stringify({ at: Date.now(), ...entry })}\n`, { mode: 0o600 });
+  } catch {
+    // A ledger that cannot be written must not stop the run; the guard decisions it records are enforced elsewhere.
+  }
 }

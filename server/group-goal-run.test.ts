@@ -184,6 +184,9 @@ function goalRun(options: {
   snapshotWrites?: () => Promise<WritesSnapshot | undefined>;
   writesOutside?: (before: WritesSnapshot, declared: readonly string[]) => Promise<string[] | undefined>;
   verifyRefusal?: string;
+  researchRules?: { heldOutPaths?: readonly string[]; pilotMaxTasks?: number; handoffExpectsFiles?: readonly string[] };
+  scanHeldOut?: (botId: string) => Promise<string[]>;
+  missingHandoffFiles?: () => Promise<string[]>;
   dispatchWave?: (batch: Array<{ bot: { id: string; name: string }; role?: string; assignment: string }>) => Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepResult["outcome"]; stopReason?: string | null }>>;
 }) {
   const members = options.members ?? [{ id: "solo-id", name: "Solo" }];
@@ -191,6 +194,7 @@ function goalRun(options: {
   const calls: Array<{ bot: string; coordinator: boolean; instructions: string }> = [];
   const finished: Array<{ status: GoalRunEnd; detail: string }> = [];
   const progress: string[] = [];
+  const notes: string[] = [];
   let cancelled = false;
   const done = runGoalRun({
     run,
@@ -205,6 +209,9 @@ function goalRun(options: {
     ...(options.verifyRefusal ? { verifyRefusal: options.verifyRefusal } : {}),
     ...(options.snapshotWrites ? { snapshotWrites: options.snapshotWrites } : {}),
     ...(options.writesOutside ? { writesOutside: options.writesOutside } : {}),
+    ...(options.researchRules ? { researchRules: options.researchRules } : {}),
+    ...(options.scanHeldOut ? { scanHeldOut: options.scanHeldOut } : {}),
+    ...(options.missingHandoffFiles ? { missingHandoffFiles: options.missingHandoffFiles } : {}),
     ...(options.dispatchWave ? { dispatchWave: options.dispatchWave } : {}),
     cancelled: () => cancelled,
     current: (id) => members.find((member) => member.id === id),
@@ -221,9 +228,9 @@ function goalRun(options: {
       finished.push({ status, detail });
     },
     progress: (detail) => progress.push(detail),
-    note: () => {},
+    note: (text) => notes.push(text),
   });
-  return { done, run, calls, finished, progress };
+  return { done, run, calls, finished, progress, notes };
 }
 
 describe("one goal-run loop for a room and a one-on-one chat", () => {
@@ -806,5 +813,87 @@ describe("room verify checks and tester writes", () => {
     });
     await goal.done;
     expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("unknown model vendor") }]);
+  });
+});
+
+describe("B3/B6/B11 research rules and B4 evaluator vendor", () => {
+  const researchPlan = (tasks: Array<Record<string, unknown>>) => settled(envelope({ status: "continue", detail: "Plan", tasks }));
+
+  it("the pilot gate refuses a first plan larger than the goal file allows, then lets a smaller one run", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "a-id", name: "A" }, { id: "b-id", name: "B" }],
+      roles: { "a-id": "worker", "b-id": "worker" },
+      researchRules: { pilotMaxTasks: 1 },
+      steps: [
+        researchPlan([
+          { id: "t1", assignee: "A", instruction: "One", writes: ["a.txt"] },
+          { id: "t2", assignee: "B", instruction: "Two", writes: ["b.txt"] },
+        ]),
+        researchPlan([
+          { id: "t3", assignee: "A", instruction: "One again", writes: ["a.txt"] },
+        ]),
+        settled("Done."),
+        settled(envelope({ status: "completed", detail: "Pilot held." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Pilot held." }]);
+    expect(goal.calls[1]!.instructions).toContain("the pilot plan may schedule at most 1 task(s)");
+  });
+
+  it("the GPU handoff lets a completed goal finish once its files are present", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
+      roles: { "worker-id": "worker" },
+      researchRules: { handoffExpectsFiles: ["results/metrics.json"] },
+      missingHandoffFiles: async () => [],
+      steps: [
+        researchPlan([{ id: "t1", assignee: "Worker", instruction: "Prepare", writes: ["run.py"] }]),
+        settled("Prepared."),
+        settled(envelope({ status: "completed", detail: "Handed off." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Handed off." }]);
+  });
+
+  it("missing handoff files turn a completed call into needs-input with the file names", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
+      roles: { "worker-id": "worker" },
+      researchRules: { handoffExpectsFiles: ["results/metrics.json"] },
+      missingHandoffFiles: async () => ["results/metrics.json"],
+      steps: [
+        researchPlan([{ id: "t1", assignee: "Worker", instruction: "Prepare", writes: ["run.py"] }]),
+        settled("Prepared."),
+        settled(envelope({ status: "completed", detail: "Handed off." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{
+      status: "needs-input",
+      detail: expect.stringContaining("missing files the goal file expects: results/metrics.json"),
+    }]);
+  });
+
+  it("held-out paths mentioned in a member's event log are reported after the fact", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
+      roles: { "worker-id": "worker" },
+      researchRules: { heldOutPaths: ["eval/heldout.json"] },
+      scanHeldOut: async (botId) => (botId === "worker-id" ? ["eval/heldout.json"] : []),
+      steps: [
+        researchPlan([{ id: "t1", assignee: "Worker", instruction: "Prepare", writes: ["run.py"] }]),
+        settled("Prepared."),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+    expect(goal.notes.some((note) => note.includes("touched held-out paths") && note.includes("eval/heldout.json"))).toBe(true);
   });
 });

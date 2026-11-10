@@ -23,6 +23,7 @@ const ROLE_LABEL: Record<TeamRole, LocaleKey> = {
   worker: "room.panel.role.worker",
   tester: "room.panel.role.tester",
   reviewer: "room.panel.role.reviewer",
+  evaluator: "room.panel.role.evaluator",
 };
 
 /** The roles after giving `botId` the role `role`; one lead at most, so a new lead replaces the old one. */

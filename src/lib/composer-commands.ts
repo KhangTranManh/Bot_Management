@@ -1,6 +1,6 @@
 import { blankCode, offersSkillCommand } from "../../shared/skill-command";
 
-export type ComposerSlashCommandId = "goal" | "chat" | "learn" | "setup";
+export type ComposerSlashCommandId = "goal" | "chat" | "learn" | "setup" | "research";
 
 export type ComposerSlashCommand =
   | { kind: "command"; id: ComposerSlashCommandId; label: `/${ComposerSlashCommandId}`; description: string }
@@ -47,6 +47,12 @@ export function chatTextFromComposer(text: string): string | null {
 
 export function goalTextFromComposer(text: string): string | null {
   const match = /^\/goal(?:\s+([\s\S]*))?$/i.exec(text);
+  return match ? (match[1] ?? "").trimStart() : null;
+}
+
+/** `/research text` runs `text` as a goal in a research room; the room's goal-file gate does the rest. */
+export function researchTextFromComposer(text: string): string | null {
+  const match = /^\/research(?:\s+([\s\S]*))?$/i.exec(text);
   return match ? (match[1] ?? "").trimStart() : null;
 }
 

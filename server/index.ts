@@ -5,7 +5,7 @@ import { reserveGmailDrafts } from "./gmail-draft-policy.ts";
 import { createGmailDrafts } from "./host/gmail-drafts.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { rm as removeDirectory } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -237,7 +237,7 @@ import { writesOutside, writesSnapshot } from "./writes-audit.ts";
 import { runVerifyCommand } from "./verify-run.ts";
 import type { VerifyCommand } from "../shared/wire.ts";
 import { modelVendor } from "./model-vendor.ts";
-import { loadResearchGoal } from "./research-goal.ts";
+import { appendResearchLedger, loadResearchGoal, type ResearchGoalFile } from "./research-goal.ts";
 import { roomNow } from "./room-now.ts";
 import { looksLikeProgressQuestion } from "../shared/auto-goal.ts";
 import type { MemberNow } from "../shared/room-now.ts";
@@ -10998,9 +10998,15 @@ async function runGroupGoalOperation(args: {
   // the schema, and be approved (hash locked); a locked file that changed on disk blocks the run.
   let researchVerify: VerifyCommand[] | undefined;
   let budgetWallMinutes: number | undefined;
+  let researchGoalLoaded: ResearchGoalFile | undefined;
+  let researchLedgerPath: string | undefined;
   if (room?.kind === "research") {
     const folder = store.pinGroupCwd(args.groupId, args.threadId) ?? room.cwd ?? undefined;
-    const loaded = room.goalFile && folder ? loadResearchGoal(join(folder, room.goalFile)) : { ok: false as const, error: "this research room has no goal file set (goalFile)" };
+    if (!folder) {
+      finishGroupGoalRun(args.groupId, args.operation, "needs-input", "This research room needs a working folder (set cwd) before its goal file can be checked.");
+      return;
+    }
+    const loaded = room.goalFile ? loadResearchGoal(join(folder, room.goalFile)) : { ok: false as const, error: "this research room has no goal file set (goalFile)" };
     if (!loaded.ok) {
       finishGroupGoalRun(args.groupId, args.operation, "needs-input", `${loaded.error}. Set goalFile on the room, then approve it with PATCH { "researchGoalApprove": true }.`);
       return;
@@ -11015,6 +11021,11 @@ async function runGroupGoalOperation(args: {
     }
     researchVerify = loaded.goal.verify;
     budgetWallMinutes = loaded.goal.budget.wallMinutes;
+    researchGoalLoaded = loaded.goal;
+    researchLedgerPath = join(folder, loaded.goal.ledgerFile ?? "ledger.jsonl");
+    appendResearchLedger(researchLedgerPath, {
+      kind: "run-start", goal: loaded.goal.name, hash: loaded.hash, runId: run.runId,
+    });
   }
   await runGoalRun({
     run,
@@ -11047,12 +11058,46 @@ async function runGroupGoalOperation(args: {
     },
     verify: researchVerify ?? (room && !room.dm && room.verify?.length ? room.verify : undefined),
     budgetWallMinutes,
+    ...(researchGoalLoaded ? {
+      researchRules: {
+        heldOutPaths: researchGoalLoaded.heldOutPaths,
+        pilotMaxTasks: researchGoalLoaded.pilot?.maxTasks,
+        handoffExpectsFiles: researchGoalLoaded.handoff?.expectsFiles,
+      },
+      scanHeldOut: async (botId: string) => {
+        const folder = store.pinGroupCwd(args.groupId, args.threadId) ?? room?.cwd ?? undefined;
+        if (!folder || !researchGoalLoaded?.heldOutPaths?.length) return [];
+        const paths = researchGoalLoaded.heldOutPaths;
+        const threads = [args.threadId, ...store.tasks(botId)
+          .filter((task) => task.openedBy?.kind === "work" && task.openedBy.roomLane && task.openedBy.threadId === args.threadId)
+          .map((task) => task.threadId)];
+        const mentioned = new Set<string>();
+        for (const threadId of threads) {
+          let raw = "";
+          try {
+            raw = readFileSync(join(EVENTS_DIR, `${threadId}.ndjson`), "utf8");
+          } catch {
+            continue;
+          }
+          for (const path of paths) if (raw.includes(path)) mentioned.add(path);
+        }
+        void folder;
+        return [...mentioned];
+      },
+      missingHandoffFiles: async () => {
+        const folder = store.pinGroupCwd(args.groupId, args.threadId) ?? room?.cwd ?? undefined;
+        if (!folder) return researchGoalLoaded.handoff?.expectsFiles ?? [];
+        return (researchGoalLoaded.handoff?.expectsFiles ?? []).filter((file) => !existsSync(join(folder, file)));
+      },
+    } : {}),
     ...(room && !room.dm && room.verify?.length && !store.pinGroupCwd(args.groupId, args.threadId)
       ? { verifyRefusal: "This room has completion checks but no working folder to run them in. Set the room's folder, then send the goal again." }
       : {}),
     runVerify: async (command) => {
       const roomCwd = store.pinGroupCwd(args.groupId, args.threadId);
-      return roomCwd ? runVerifyCommand(command, roomCwd) : { id: command.id, exitCode: null, output: "the room has no working folder" };
+      const result = await (roomCwd ? runVerifyCommand(command, roomCwd) : { id: command.id, exitCode: null, output: "the room has no working folder" });
+      if (researchLedgerPath) appendResearchLedger(researchLedgerPath, { kind: "verify", result });
+      return result;
     },
     ...(room?.kind === "research" ? {
       vendorOf: (botId: string) => {
@@ -11060,7 +11105,10 @@ async function runGroupGoalOperation(args: {
         return bot ? modelVendor(registry.cliTarget(bot.modelSelection.instanceId)?.driverKind, bot.modelSelection.model) : undefined;
       },
     } : {}),
-    finish: (status, detail, text) => finishGroupGoalRun(args.groupId, args.operation, status, detail, text),
+    finish: (status, detail, text) => {
+      if (researchLedgerPath) appendResearchLedger(researchLedgerPath, { kind: "run-end", status, detail: detail.slice(0, 200) });
+      finishGroupGoalRun(args.groupId, args.operation, status, detail, text);
+    },
     progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),
     note: (text) => store.appendMessage(args.threadId, {
       role: "bot",

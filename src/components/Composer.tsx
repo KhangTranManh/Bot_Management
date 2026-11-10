@@ -88,6 +88,7 @@ import {
   composerSlashTrigger,
   chatTextFromComposer,
   goalTextFromComposer,
+  researchTextFromComposer,
   replaceComposerSlashTrigger,
   skillSlashCommands,
   slashCommandMatches,
@@ -286,7 +287,7 @@ export function Composer({
     const route = roomRouteForComposer(message, members ?? [], group, picks.ids(message));
     return route.ambiguous || (route.responders.length > 0 && route.responders.every(botSupportsImages));
   };
-  const typedGoalText = !group?.dm ? goalTextFromComposer(text) : null;
+  const typedGoalText = !group?.dm ? goalTextFromComposer(text) ?? (group?.kind === "research" ? researchTextFromComposer(text) : null) : null;
   const typedChatText = group && !group.dm && typedGoalText === null ? chatTextFromComposer(text) : null;
   const effectiveText = typedGoalText ?? typedChatText ?? text;
   const effectiveChannelMode = typedGoalText !== null ? "goal" : channelMode;
@@ -312,6 +313,12 @@ export function Composer({
       id: "chat",
       label: "/chat",
       description: t("composer.command.chatDesc"),
+    });
+    if (builtIns && group?.kind === "research") available.push({
+      kind: "command",
+      id: "research",
+      label: "/research",
+      description: t("composer.command.researchDesc"),
     });
     if (builtIns && canLearn) {
       available.push({
