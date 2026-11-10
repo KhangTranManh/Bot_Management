@@ -8,7 +8,29 @@ export interface LeadTaskBallot {
   dependsOn: readonly string[];
 }
 
+export interface LeadTaskPlan {
+  id: string;
+  assignee: string;
+  /** The role the coordinator gave the assignee for this run, as the task's assignment framing. */
+  role?: string;
+  instruction: string;
+  reads?: readonly string[];
+  writes?: readonly string[];
+  locks?: readonly string[];
+  dependsOn?: readonly string[];
+}
+
 export const LEAD_MAX_WAVE_SIZE = 5;
+
+export function leadBallotFromPlan(plan: LeadTaskPlan): LeadTaskBallot {
+  return {
+    id: plan.id,
+    reads: plan.reads ?? [],
+    writes: plan.writes ?? [],
+    locks: plan.locks ?? [],
+    dependsOn: plan.dependsOn ?? [],
+  };
+}
 
 function overlaps(a: readonly string[], b: readonly string[]): boolean {
   const set = new Set(a);
@@ -67,4 +89,15 @@ export function leadConflictsInWave(wave: readonly LeadTaskBallot[]): Array<[str
     }
   }
   return out;
+}
+
+/** Batches a wave into groups that may each run with Promise.all; the groups run one after another. */
+export function leadBatchesForWave(wave: readonly LeadTaskBallot[]): LeadTaskBallot[][] {
+  const batches: LeadTaskBallot[][] = [];
+  for (const task of wave) {
+    const batch = batches.find((candidates) => candidates.every((other) => canRunParallel(task, other)));
+    if (batch) batch.push(task);
+    else batches.push([task]);
+  }
+  return batches;
 }

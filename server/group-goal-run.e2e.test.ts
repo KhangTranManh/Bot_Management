@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -22,6 +22,7 @@ let busyGoalFinishGate = "";
 let routineGoalFinishGate = "";
 let queueFinishGate = "";
 let stopScopedLeadFinishGate = "";
+let waveHeldFinishGate = "";
 let base = "";
 let stderr = "";
 
@@ -57,6 +58,7 @@ beforeAll(async () => {
   routineGoalFinishGate = join(home, "routine-goal-finish");
   queueFinishGate = join(home, "queue-finish");
   stopScopedLeadFinishGate = join(home, "stop-scoped-lead-finish");
+  waveHeldFinishGate = join(home, "wave-held-finish");
   writeFileSync(stopScopedLeadFinishGate, "allow initial goal delegation");
   const data = join(home, ".openmausbot");
   const staticDir = join(home, "static");
@@ -194,20 +196,57 @@ beforeAll(async () => {
         },
         config: { cli: FAKE_CLAUDE },
       },
+      waveLead: {
+        driver: "claudeAgent",
+        displayName: "Wave lead fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify([
+            "I am splitting the work.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Two-part plan\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Held worker\",\"instruction\":\"Draft the launch plan and report\",\"writes\":[\"plan.md\"]},{\"id\":\"t2\",\"assignee\":\"Free worker\",\"instruction\":\"List the launch risks and report\"}]}</openmaus-goal>",
+            "Both parts are in.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Plan drafted and risks listed.\"}</openmaus-goal>",
+          ]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "wave-lead-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      waveHeld: {
+        driver: "claudeAgent",
+        displayName: "Wave held fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "slow",
+          FAKE_CLAUDE_SLOW_FINISH_GATE: waveHeldFinishGate,
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Drafted the launch plan and reported."]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "wave-held-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      waveFree: {
+        driver: "claudeAgent",
+        displayName: "Wave free fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Listed the launch risks and reported."]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "wave-free-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
     },
   }));
   const port = await freePortBlock([0, 1]);
   base = `http://127.0.0.1:${port}`;
-  child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+  child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "index.ts")], {
     cwd: ROOT,
     env: {
-      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      // The fake CLI is a .ts file with a node shebang; the server resolves node
+      // through this PATH, so the runner's own node must lead it.
+      PATH: [dirname(process.execPath), ...(process.env.PATH ? [process.env.PATH] : [])].join(delimiter),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
       OMB_PORT: String(port),
       OMB_WEBHOOK_PORT: String(port + 1),
       OMB_STATIC_DIR: staticDir,
+      OMB_LEAD_DEPT_CAP: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -1123,5 +1162,72 @@ describe("goal-driven channel runs", () => {
       sendId: secondSendId,
       queueId: queued.body.queueId,
     });
+  });
+
+  it("runs a task plan as parallel worker turns on one coordinator turn", async () => {
+    const lead = (await api("POST", "/api/bots", {
+      name: "Wave lead",
+      modelSelection: { instanceId: "waveLead", model: "claude-sonnet-5" },
+      requireAvailableModel: true,
+    })).body.bot;
+    const held = (await api("POST", "/api/bots", {
+      name: "Held worker",
+      modelSelection: { instanceId: "waveHeld", model: "claude-sonnet-5" },
+      requireAvailableModel: true,
+    })).body.bot;
+    const free = (await api("POST", "/api/bots", {
+      name: "Free worker",
+      modelSelection: { instanceId: "waveFree", model: "claude-sonnet-5" },
+      requireAvailableModel: true,
+    })).body.bot;
+    const room = (await api("POST", "/api/groups", {
+      name: "Wave team",
+      memberIds: [lead.id, held.id, free.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
+
+    const sent = await api("POST", `/api/groups/${room.id}/messages`, {
+      text: "Plan and de-risk the launch together",
+      mode: "goal",
+      sendId: "goal_send_wave_1234567890",
+    });
+    expect(sent.status).toBe(202);
+    expect(sent.body.message).toMatchObject({ channelMode: "goal" });
+
+    // Both plan tasks were dispatched from the same coordinator turn: the free worker's
+    // result row lands while the held worker is still waiting on its gate.
+    const resultRows = (current: { messages?: Array<{ kind: string; from?: { name?: string }; roomRequest?: { phase?: string } }> }) =>
+      current?.messages?.filter((message) => message.kind === "activity" && message.roomRequest?.phase === "result")
+        .map((message) => message.from?.name) ?? [];
+    await expect.poll(async () => {
+      const state = (await api("GET", "/api/bots?messages=30")).body;
+      const current = state.groups.find((candidate: { id: string }) => candidate.id === room.id);
+      const rows = resultRows(current);
+      return rows.includes("Free worker") && !rows.includes("Held worker") ? true : `result rows so far: ${JSON.stringify(rows)}`;
+    }, { timeout: hostTimeout(15_000) }).toBe(true);
+
+    writeFileSync(waveHeldFinishGate, "release the held plan worker");
+
+    await expect.poll(async () => {
+      const state = (await api("GET", "/api/bots?messages=30")).body;
+      const current = state.groups.find((candidate: { id: string }) => candidate.id === room.id);
+      return current?.messages.find((message: { kind: string }) => message.kind === "goal.run")?.goalRun;
+    }, { timeout: hostTimeout(15_000) }).toMatchObject({
+      status: "completed",
+      coordinatorBotId: lead.id,
+      turnCount: 4,
+      detail: "Plan drafted and risks listed.",
+    });
+
+    const state = (await api("GET", "/api/bots?messages=30")).body;
+    const current = state.groups.find((candidate: { id: string }) => candidate.id === room.id);
+    expect(current.messages.filter((message: { kind: string; role?: string }) => message.kind === "text" && message.role === "bot")
+      .map((message: { from?: { name?: string } }) => message.from?.name)).toEqual(["Wave lead", "Wave lead"]);
+    const rows = current.messages.filter((message: { kind: string; roomRequest?: { phase?: string }; tool?: { ok?: boolean } }) => message.kind === "activity" && message.roomRequest?.phase === "result");
+    expect(rows.map((message: { from?: { name?: string } }) => message.from?.name)).toEqual(["Free worker", "Held worker"]);
+    expect(rows.every((message: { tool?: { ok?: boolean } }) => message.tool?.ok === true)).toBe(true);
+    expect(JSON.stringify(current.messages)).not.toContain("<openmaus-goal>");
+    expect(JSON.stringify(current.messages)).not.toContain("\"tasks\":");
+    expect(current.working).toBe(false);
   });
 });

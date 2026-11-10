@@ -10629,6 +10629,178 @@ async function runClaimedGroupMemberTurn(
   }
 }
 
+/** One wave task's turn in its own group thread: the server runs one provider turn per thread, so tasks
+ * beside each other each need a thread, and the settled result is appended back into the goal's thread. */
+async function runLaneGoalStep(
+  args: {
+    groupId: string;
+    threadId: string;
+    bot: BotRecord;
+    operation: GroupTurnOperation;
+    skillAuthoringClaim: { claimed: boolean };
+    coordinator: boolean;
+    instructions: string;
+    lane: { threadId: string; brief: string };
+    lead?: BotRecord;
+  },
+  run: NonNullable<GroupTurnOperation["goalRun"]>,
+): Promise<{ ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }> {
+  let requested = false;
+  for (;;) {
+    const laneOperation = beginGroupTurnOperation(args.groupId, args.lane.threadId, [args.bot.id]);
+    try {
+      const availability = await waitForGroupMemberBot(args.bot, laneOperation, (detail) => {
+        updateGroupGoalRunProgress(args.operation, `${detail} This goal will continue when they are available.`);
+      });
+      if (availability === "cancelled") return { ran: false, replyText: "", outcome: "cancelled" };
+      if (availability === "unavailable") {
+        return { ran: false, replyText: "", outcome: "unavailable", stopReason: `${args.bot.name} is no longer available` };
+      }
+      if (availability === "timed_out") {
+        const minutes = Math.max(1, Math.round(GROUP_GOAL_WAIT_MAX_MS / 60_000));
+        return {
+          ran: false,
+          replyText: "",
+          outcome: "busy",
+          stopReason: `${args.bot.name} stayed busy in another conversation for ${minutes} minute${minutes === 1 ? "" : "s"}`,
+        };
+      }
+      if (run.turnCount >= run.maxTurns) return { ran: false, replyText: "" };
+
+      if (!requested) {
+        requested = true;
+        store.appendMessage(args.lane.threadId, {
+          role: "bot",
+          kind: "text",
+          from: { botId: args.lead?.id ?? args.bot.id, name: args.lead?.name ?? args.bot.name, color: args.lead?.color ?? args.bot.color },
+          text: args.lane.brief,
+        });
+      }
+      const result: GroupTurnOrchestration["result"] = {};
+      let claimed = false;
+      try {
+        const ran = await runGroupMemberTurn(
+          args.groupId,
+          args.lane.threadId,
+          args.bot.id,
+          1,
+          new Set(),
+          undefined,
+          undefined,
+          () => args.operation.cancelled || laneOperation.cancelled,
+          () => groupProviderHandshakeStarted(laneOperation),
+          () => groupProviderHandshakeSettled(laneOperation),
+          args.skillAuthoringClaim,
+          {
+            systemInstructions: args.instructions,
+            followMentions: false,
+            result,
+            goalRunId: run.runId,
+            onClaimed: () => {
+              if (claimed) return;
+              claimed = true;
+              run.turnCount += 1;
+              args.operation.botIds.add(args.bot.id);
+              updateGroupGoalRunProgress(
+                args.operation,
+                `${args.bot.name} is working on team turn ${run.turnCount} of ${run.maxTurns}.`,
+              );
+            },
+          },
+        );
+        // Busy here is a lost claim race, so retry in-step; a parked member is deliberately not retried.
+        if (result.outcome === "busy") continue;
+        if (ran && result.outcome === "settled" && result.replyText?.trim()) {
+          store.appendMessage(args.threadId, {
+            role: "bot",
+            kind: "text",
+            from: { botId: args.bot.id, name: args.bot.name, color: args.bot.color },
+            text: result.replyText.trim(),
+          });
+        }
+        return {
+          ran,
+          replyText: result.replyText ?? "",
+          outcome: result.outcome,
+          stopReason: result.stopReason,
+        };
+      } finally {
+        args.operation.botIds.delete(args.bot.id);
+      }
+    } finally {
+      finishGroupTurnOperation(args.groupId, laneOperation);
+    }
+  }
+}
+
+/** One wave batch dispatched through the runtime tree: each task is a work child in its own lane thread, and
+ * the child's result reports back into the goal thread. The wave root replies "poll", so it settles in place
+ * once the children settle and no coordinator turn runs outside the run loop. */
+async function runGoalWaveOnTree(args: {
+  groupId: string;
+  threadId: string;
+  coordinatorBot: BotRecord;
+  run: NonNullable<GroupTurnOperation["goalRun"]>;
+  cancelled(): boolean;
+  batch: Array<{ bot: BotRecord; role?: string; assignment: string }>;
+}): Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }>> {
+  const idle = (botId: string, outcome: GroupMemberTurnOutcome, stopReason?: string | null) => ({ botId, ran: false, replyText: "", outcome, stopReason });
+  const room = store.group(args.groupId);
+  if (!room || room.dm || args.batch.length === 0) {
+    return args.batch.map((task) => idle(task.bot.id, "dispatch_failed", "this goal's channel cannot open wave lanes"));
+  }
+  const sender = { id: args.coordinatorBot.id, name: args.coordinatorBot.name };
+  const children = args.batch.map((task) => ({
+    ...task,
+    lane: roomJobs.openLane(room, args.threadId, task.bot.id, sender, task.assignment),
+    childId: undefined as string | undefined,
+    refusal: undefined as string | undefined,
+  }));
+  const waveId = randomUUID();
+  coordinator.beginTurn({
+    id: waveId,
+    address: { groupId: args.groupId, threadId: args.threadId, botId: args.coordinatorBot.id },
+    brief: `Goal wave for: ${args.run.goal}`,
+    level: roomTurnApprovalMode(args.coordinatorBot, args.threadId),
+    origin: OUTSIDE,
+    reply: "poll",
+  });
+  for (const child of children) {
+    const brief = child.role ? `${child.role}: ${child.assignment}` : child.assignment;
+    try {
+      const { node } = coordinator.enqueue(
+        { groupId: args.groupId, threadId: args.threadId, botId: args.coordinatorBot.id },
+        waveId, waveId, { botId: child.bot.id, threadId: child.lane.threadId }, brief, { mode: "work", thread: "new" },
+      );
+      child.childId = node.id;
+    } catch (error) {
+      child.refusal = error instanceof Error ? error.message : String(error);
+    }
+  }
+  coordinator.endTurn(waveId, { ok: true, text: "goal wave dispatched" });
+  const dispatched = children.filter((child) => child.childId);
+  const terminal = new Set(["completed", "failed", "cancelled"]);
+  const deadline = Date.now() + GROUP_GOAL_WAIT_MAX_MS;
+  for (;;) {
+    if (args.cancelled() || dispatched.every((child) => terminal.has(coordinator.node(child.childId!)?.status ?? ""))) break;
+    if (Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  if (args.cancelled()) {
+    for (const child of dispatched) void interruptDirectThread(child.bot.id, child.lane.threadId);
+  }
+  return children.map((child) => {
+    const node = child.childId ? coordinator.node(child.childId) : undefined;
+    if (!node) return idle(child.bot.id, "dispatch_failed", child.refusal);
+    if (node.status === "completed") return { botId: child.bot.id, ran: true, replyText: node.result ?? "", outcome: "settled" as const };
+    if (node.status === "cancelled") return idle(child.bot.id, "cancelled", "the wave was stopped");
+    if (node.status === "failed") {
+      return { botId: child.bot.id, ran: true, replyText: node.result ?? "", outcome: "provider_failed" as const, stopReason: node.outcomeDetail ?? node.result.split("\n", 1)[0]?.slice(0, 120) };
+    }
+    return idle(child.bot.id, "busy", `${child.bot.name} has not finished the assignment`);
+  });
+}
+
 async function runGroupGoalStep(args: {
   groupId: string;
   threadId: string;
@@ -10637,11 +10809,14 @@ async function runGroupGoalStep(args: {
   skillAuthoringClaim: { claimed: boolean };
   coordinator: boolean;
   instructions: string;
+  lead?: BotRecord;
+  lane?: { threadId: string; brief: string };
 }): Promise<{ ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }> {
   const run = args.operation.goalRun;
   if (!run || args.operation.cancelled || run.turnCount >= run.maxTurns) {
     return { ran: false, replyText: "" };
   }
+  if (args.lane) return runLaneGoalStep({ ...args, lane: args.lane }, run);
   for (;;) {
     const availability = await waitForGroupMemberBot(args.bot, args.operation, (detail) => {
       updateGroupGoalRunProgress(args.operation, `${detail} This goal will continue when they are available.`);
@@ -10729,7 +10904,17 @@ async function runGroupGoalOperation(args: {
     members: args.members,
     cancelled: () => args.operation.cancelled,
     current: (botId) => store.bot(botId) ?? undefined,
-    step: (bot, coordinator, instructions) => runGroupGoalStep({ ...args, bot, skillAuthoringClaim, coordinator, instructions }),
+    taskThread: (_bot, assignment) => {
+      const group = store.group(args.groupId);
+      if (!group || group.dm) return undefined;
+      const snippet = assignment.replace(/\s+/g, " ").trim().slice(0, 48);
+      const task = store.createGroupTask(args.groupId, `${group.name} · ${snippet || "goal task"}`, false);
+      return task ? { threadId: task.threadId } : undefined;
+    },
+    step: (bot, coordinator, instructions, lane) => runGroupGoalStep({ ...args, bot, skillAuthoringClaim, coordinator, instructions, lead: args.coordinator, lane }),
+    dispatchWave: (batch) => args.operation.goalRun
+      ? runGoalWaveOnTree({ groupId: args.groupId, threadId: args.threadId, coordinatorBot: args.coordinator, run: args.operation.goalRun, cancelled: () => args.operation.cancelled, batch })
+      : Promise.resolve(batch.map((task) => ({ botId: task.bot.id, ran: false, replyText: "", outcome: "dispatch_failed" as const }))),
     finish: (status, detail, text) => finishGroupGoalRun(args.groupId, args.operation, status, detail, text),
     progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),
     note: (text) => store.appendMessage(args.threadId, {

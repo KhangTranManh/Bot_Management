@@ -78,6 +78,8 @@ export interface BeginTurnRequest {
   level: Level;
   opener?: HandoffOpener;
   origin?: WorkOrigin;
+  /** Overrides the default "resume": "poll" roots settle in place when their children settle, without a resume turn. */
+  reply?: Reply;
   goalRunId?: string;
 }
 

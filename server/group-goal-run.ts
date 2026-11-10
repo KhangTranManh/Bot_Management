@@ -2,6 +2,8 @@ import type { ServerText } from "../shared/server-text.ts";
 import { noticeFailure } from "./chat-notices.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { GroupDefaultResponder } from "./store.ts";
+import { leadDeptCapEnabled } from "./lead-cap.ts";
+import { LEAD_MAX_WAVE_SIZE, leadBallotFromPlan, leadBatchesForWave, leadWaves, type LeadTaskPlan } from "./lead-schedule.ts";
 
 // Odd so the final bounded turn always falls to the coordinator for the completion decision.
 export const GROUP_GOAL_MAX_TURNS = 13;
@@ -12,11 +14,15 @@ export const GROUP_GOAL_CONTROL_CLOSE = "</openmaus-goal>";
 
 export type GroupGoalDecision =
   | { status: "continue"; next: string; instruction: string; detail?: string }
+  | { status: "continue"; tasks: LeadTaskPlan[]; detail?: string }
   | { status: "completed" | "needs-input" | "blocked"; detail: string };
 
 export interface GoalRunMember {
   id: string;
   name: string;
+  /** The member's own profile role and blurb, so the coordinator assigns plan roles that fit. */
+  title?: string;
+  description?: string;
   hidden?: boolean;
   chiefOfStaff?: boolean;
 }
@@ -35,6 +41,46 @@ export function groupGoalCompletionTurnId(
 
 const bounded = (value: unknown, max: number): string =>
   typeof value === "string" ? value.trim().slice(0, max) : "";
+
+const GROUP_GOAL_MAX_TASKS = 8;
+const GROUP_GOAL_TASK_FIELD_MAX = 120;
+const GROUP_GOAL_TASK_LIST_MAX = 8;
+
+/** Every list entry must be a non-empty string; a missing list is empty, an invalid one fails the plan. */
+function boundedList(value: unknown): string[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > GROUP_GOAL_TASK_LIST_MAX) return null;
+  const out: string[] = [];
+  for (const item of value) {
+    const entry = bounded(item, GROUP_GOAL_TASK_FIELD_MAX);
+    if (!entry) return null;
+    out.push(entry);
+  }
+  return out;
+}
+
+function parseGoalTasks(raw: unknown): LeadTaskPlan[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > GROUP_GOAL_MAX_TASKS) return null;
+  const plans: Array<LeadTaskPlan & { reads: string[]; writes: string[]; locks: string[]; dependsOn: string[] }> = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) return null;
+    const record = item as Record<string, unknown>;
+    const id = bounded(record.id, 100);
+    const assignee = bounded(record.assignee, 100);
+    const role = bounded(record.role, 100);
+    const instruction = bounded(record.instruction, 2_000);
+    const reads = boundedList(record.reads);
+    const writes = boundedList(record.writes);
+    const locks = boundedList(record.locks);
+    const dependsOn = boundedList(record.dependsOn);
+    if (!id || !assignee || !instruction || !reads || !writes || !locks || !dependsOn) return null;
+    plans.push({ id, assignee, ...(role ? { role } : {}), instruction, reads, writes, locks, dependsOn });
+  }
+  const ids = new Set(plans.map((plan) => plan.id));
+  if (ids.size !== plans.length) return null;
+  if (plans.some((plan) => plan.dependsOn.some((dep) => !ids.has(dep)))) return null;
+  return plans;
+}
 
 function visibleCoordinatorText(text: string): string {
   let visible = text;
@@ -55,7 +101,7 @@ function visibleCoordinatorText(text: string): string {
 }
 
 /** The last complete envelope wins, so a quoted example earlier in the reply cannot steer the run. */
-export function parseGroupGoalDecision(text: string): ParsedGroupGoalDecision {
+export function parseGroupGoalDecision(text: string, opts?: { tasksAllowed?: boolean }): ParsedGroupGoalDecision {
   const closeAt = text.lastIndexOf(GROUP_GOAL_CONTROL_CLOSE);
   const openAt = closeAt < 0 ? -1 : text.lastIndexOf(GROUP_GOAL_CONTROL_OPEN, closeAt);
   if (openAt < 0 || closeAt < 0) return { visibleText: visibleCoordinatorText(text), decision: null };
@@ -67,6 +113,11 @@ export function parseGroupGoalDecision(text: string): ParsedGroupGoalDecision {
     const status = raw.status;
     const detail = bounded(raw.detail, 500);
     if (status === "continue") {
+      if (opts?.tasksAllowed && raw.tasks !== undefined) {
+        const tasks = parseGoalTasks(raw.tasks);
+        if (!tasks) return { visibleText, decision: null };
+        return { visibleText, decision: { status, tasks, ...(detail ? { detail } : {}) } };
+      }
       const next = bounded(raw.next, 100);
       const instruction = bounded(raw.instruction, 2_000);
       if (!next || !instruction) return { visibleText, decision: null };
@@ -117,11 +168,12 @@ export function groupGoalCoordinatorInstructions(args: {
   remainingTurns: number;
   note?: string;
   solo?: boolean;
+  tasksAllowed?: boolean;
 }): string {
   const active = args.members.filter((member) => !member.hidden);
   const roster = active
-    .map((member) => `${member.name} (${member.id})`)
-    .join(", ");
+    .map((member) => `${member.name} (${member.id})${member.title ? ` — ${member.title}` : ""}`)
+    .join("; ");
   const self = args.solo ? active[0] : undefined;
   return [
     self ? "You are working alone toward a bounded goal." : "You are the lead coordinator for a bounded team goal run.",
@@ -138,6 +190,10 @@ export function groupGoalCoordinatorInstructions(args: {
       ? `${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","next":"${self.id}","instruction":"Your next step","detail":"Short progress note"}${GROUP_GOAL_CONTROL_CLOSE}`
       : `${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","next":"Exact member id from the roster","instruction":"Concrete next assignment","detail":"Short progress note"}${GROUP_GOAL_CONTROL_CLOSE}`,
     `Or use status "completed", "needs-input", or "blocked" with a non-empty "detail" and omit next/instruction.`,
+    ...(args.tasksAllowed && !self ? [
+      `When several pieces of work can move at the same time, first give each teammate you will use a role for this goal — one short line per teammate in your human-facing update (for example: "Scout — Researcher", "Miso — Implementer", "Quill — Reviewer") — then end with a plan envelope instead: ${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","detail":"Short progress note","tasks":[{"id":"t1","assignee":"Exact member id from the roster","role":"Implementer","instruction":"Concrete assignment for that role","writes":["shared artifact it changes"],"dependsOn":[]}]}${GROUP_GOAL_CONTROL_CLOSE}`,
+      "Plan rules: 1-8 tasks with unique ids; each task goes to an active roster member whose listed profile fits it, and its role field names that role — extend each teammate's own role, never contradict it; dependsOn lists ids from this plan only; declare reads/writes/locks when tasks share artifacts or a lock, omit them when independent — the scheduler already runs overlapping tasks in turn. Never re-dispatch work the ledger already shows as done: evaluate results first.",
+    ] : []),
     "Never mention, quote, or explain the control envelope in your human-facing text.",
   ].join("\n");
 }
@@ -145,6 +201,7 @@ export function groupGoalCoordinatorInstructions(args: {
 export function groupGoalWorkerInstructions(args: {
   goal: string;
   coordinatorName: string;
+  role?: string;
   assignment: string;
   turn: number;
   maxTurns: number;
@@ -152,6 +209,7 @@ export function groupGoalWorkerInstructions(args: {
   return [
     `You are a specialist contributing to a bounded team goal run led by ${args.coordinatorName}.`,
     `Goal: ${args.goal}`,
+    ...(args.role ? [`Your role on this run: ${args.role}. Work within that role; hand off anything else back to ${args.coordinatorName}.`] : []),
     `Your assignment: ${args.assignment}`,
     `This is team turn ${args.turn} of ${args.maxTurns}.`,
     "Do the assigned work now and put concrete results, evidence, or a clear blocker in your reply.",
@@ -190,11 +248,18 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   coordinator: Bot;
   members: readonly Bot[];
   solo?: boolean;
+  /** Omitted means the OMB_LEAD_DEPT_CAP environment flag decides. */
+  tasksAllowed?: boolean;
   cancelled(): boolean;
   /** The member as the store has it now. */
   current(botId: string): Bot | undefined;
-  /** One member turn; a step counts against the run's turns once its member is claimed. */
-  step(bot: Bot, coordinator: boolean, instructions: string): Promise<GoalStepResult>;
+  /** A thread of the room for one wave task's own turn; undefined (or omitted) keeps the turn in the goal thread. */
+  taskThread?(bot: Bot, assignment: string): { threadId: string } | undefined;
+  /** Run one conflict-free batch through the runtime tree; the run loop still owns turn counting and outcome handling. */
+  dispatchWave?(batch: Array<{ bot: Bot; role?: string; assignment: string }>): Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepOutcome; stopReason?: string | null }>>;
+  /** One member turn; a step counts against the run's turns once its member is claimed. A `lane` thread lets
+   * wave tasks run beside each other, one provider turn per thread. */
+  step(bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult>;
   finish(status: GoalRunEnd, detail: string, text?: ServerText): void;
   progress(detail: string, text?: ServerText): void;
   /** An activity row in the conversation, from the coordinator. */
@@ -204,22 +269,40 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
 // spend_capped is deliberately absent: a cap refusal is deterministic.
 const TRANSIENT_STEP: ReadonlySet<GoalStepOutcome | undefined> = new Set(["provider_failed", "dispatch_failed", "stalled", "timed_out"]);
 
-async function stepOnceRetried<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>, bot: Bot, coordinator: boolean, instructions: string): Promise<GoalStepResult> {
-  const first = await deps.step(bot, coordinator, instructions);
+async function dispatchWaveBatch<Bot extends GoalRunMember>(
+  deps: GoalRunDeps<Bot>,
+  entries: Array<{ plan: LeadTaskPlan; bot: Bot }>,
+): Promise<Array<{ entry: { plan: LeadTaskPlan; bot: Bot }; result: GoalStepResult }>> {
+  const dispatched = await deps.dispatchWave!(entries.map((entry) => ({ bot: entry.bot, role: entry.plan.role, assignment: entry.plan.instruction })));
+  const normalize = (item: { ran: boolean; replyText: string; outcome?: GoalStepOutcome }) => ({
+    ...item,
+    outcome: item.outcome ?? (item.ran && item.replyText.trim() ? "settled" as const : "dispatch_failed" as const),
+  });
+  return entries.map((entry) => ({
+    entry,
+    result: dispatched.find((item) => item.botId === entry.bot.id) ?? { botId: entry.bot.id, ran: false, replyText: "", outcome: "dispatch_failed" as const },
+  })).map(({ entry, result }) => ({ entry, result: normalize(result) }));
+}
+
+async function stepOnceRetried<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>, bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult> {
+  const first = await deps.step(bot, coordinator, instructions, lane);
   if (!TRANSIENT_STEP.has(first.outcome) || deps.cancelled()) return first;
   const why = { provider_failed: "chat.notice.part.providerFailed", dispatch_failed: "chat.notice.part.dispatchFailed", stalled: "chat.notice.part.goalStalled", timed_out: "chat.notice.part.goalTimedOut" }[first.outcome as "provider_failed" | "dispatch_failed" | "stalled" | "timed_out"];
   const retry = noticeFailure("chat.notice.goalRetry", { name: bot.name, why });
   deps.progress(retry.message, retry.text);
-  return deps.step(bot, coordinator, instructions);
+  return deps.step(bot, coordinator, instructions, lane);
 }
 
 /** The goal run loop, the same for a room and a one-on-one chat (a room of one). */
 export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>): Promise<void> {
   const { run, coordinator } = deps;
   const assignmentCounts = new Map<string, number>();
+  const tasksAllowed = deps.tasksAllowed ?? leadDeptCapEnabled();
   const goalMembers: GoalRunMember[] = deps.members.map((member) => ({
     id: member.id,
     name: member.name,
+    title: member.title,
+    description: member.description,
     hidden: member.hidden,
     chiefOfStaff: member.chiefOfStaff,
   }));
@@ -238,6 +321,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       remainingTurns: run.maxTurns - coordinatorTurn,
       note,
       solo: deps.solo,
+      tasksAllowed,
     }));
     if (deps.cancelled()) return;
     if (coordinatorResult.outcome === "unavailable") {
@@ -268,7 +352,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       return;
     }
 
-    const decision = parseGroupGoalDecision(coordinatorResult.replyText).decision;
+    const decision = parseGroupGoalDecision(coordinatorResult.replyText, { tasksAllowed }).decision;
     if (!decision) {
       deps.finish("blocked", `${coordinator.name} did not provide a valid next-step decision.`);
       return;
@@ -278,6 +362,102 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       return;
     }
     if (run.turnCount >= run.maxTurns) break;
+
+    if ("tasks" in decision) {
+      const planned: Array<{ plan: LeadTaskPlan; bot: Bot }> = [];
+      for (const task of decision.tasks) {
+        const member = resolveGroupGoalMember(task.assignee, goalMembers);
+        const bot = member ? deps.current(member.id) : undefined;
+        if (!member || !bot || bot.hidden) {
+          deps.finish("blocked", `${coordinator.name} planned a task for ${task.assignee}, who is not an available member of this channel.`);
+          return;
+        }
+        planned.push({ plan: task, bot });
+      }
+      // Same-bot tasks never share a batch: a bot runs one room turn at a time.
+      const waves = leadWaves(
+        planned.map(({ plan, bot }) => ({ ...leadBallotFromPlan(plan), locks: [...(plan.locks ?? []), `bot:${bot.id}`] })),
+        Math.min(LEAD_MAX_WAVE_SIZE, new Set(planned.map(({ bot }) => bot.id)).size),
+      );
+      if (!waves.ok) {
+        deps.finish("blocked", `${coordinator.name} planned an unschedulable task plan — ${waves.error}.`);
+        return;
+      }
+      const byPlan = new Map(planned.map((entry) => [entry.plan.id, entry]));
+      waveLoop:
+      for (const wave of waves.waves) {
+        if (deps.cancelled()) return;
+        for (const batch of leadBatchesForWave(wave)) {
+          if (deps.cancelled()) return;
+          if (run.turnCount >= run.maxTurns) break waveLoop;
+          const entries = batch.map((task) => byPlan.get(task.id)!);
+          for (const entry of entries) {
+            const assignmentKey = groupGoalAssignmentKey(entry.bot.id, entry.plan.instruction);
+            const repeated = (assignmentCounts.get(assignmentKey) ?? 0) + 1;
+            assignmentCounts.set(assignmentKey, repeated);
+            if (repeated >= 3) {
+              deps.finish("blocked", `The team repeated the same assignment three times without resolving the goal.`);
+              return;
+            }
+          }
+          const runTask = (entry: { plan: LeadTaskPlan; bot: Bot }, lane?: { threadId: string }) => {
+            const step = stepOnceRetried(deps, entry.bot, false, groupGoalWorkerInstructions({
+              goal: run.goal,
+              coordinatorName: coordinator.name,
+              role: entry.plan.role,
+              assignment: entry.plan.instruction,
+              turn: run.turnCount + 1,
+              maxTurns: run.maxTurns,
+            }), lane ? { threadId: lane.threadId, brief: entry.plan.role ? `${entry.plan.role}: ${entry.plan.instruction}` : entry.plan.instruction } : undefined);
+            return step.then((result) => ({ entry, result }));
+          };
+          // Wave tasks run beside each other only when every one of them gets its own lane thread;
+          // one provider turn per thread is a server invariant.
+          const lanes = deps.solo ? [] : entries.map((entry) => deps.taskThread?.(entry.bot, entry.plan.instruction));
+          const results = deps.dispatchWave && !deps.solo
+            ? await dispatchWaveBatch(deps, entries)
+            : lanes.every((lane) => lane)
+              ? await Promise.all(entries.map((entry, index) => runTask(entry, lanes[index])))
+              : await (async () => {
+                const settled: Array<{ entry: { plan: LeadTaskPlan; bot: Bot }; result: GoalStepResult }> = [];
+                for (const [index, entry] of entries.entries()) settled.push(await runTask(entry, lanes[index]));
+                return settled;
+              })();
+          // Runtime-dispatched children never claim through onClaimed, so the batch's turns count here.
+          if (deps.dispatchWave && !deps.solo) for (const { result } of results) if (result.ran) run.turnCount += 1;
+          if (deps.cancelled()) return;
+          for (const { entry, result } of results) {
+            if (result.outcome === "unavailable") {
+              deps.finish("blocked", `${entry.bot.name} is not available.`);
+              return;
+            }
+            if (result.outcome === "spend_capped") {
+              deps.finish("blocked", result.stopReason ?? `${entry.bot.name} hit the workspace spend cap.`);
+              return;
+            }
+            if (result.outcome === "busy" || result.outcome === "parked") {
+              waitExhaustions += 1;
+              if (waitExhaustions >= GROUP_GOAL_MAX_WAIT_EXHAUSTIONS) {
+                deps.finish("blocked", `Teammates stayed busy past the wait limit ${waitExhaustions} times — try again when the team is free.`);
+                return;
+              }
+              const reason = result.stopReason?.trim().slice(0, 120) ?? `${entry.bot.name} stayed busy`;
+              deps.note(`${reason} — asking ${coordinator.name} to reassign`);
+              deps.progress(`${reason}. ${coordinator.name} is reassigning.`);
+              coordinatorNote =
+                `${reason} and could not take the assignment "${entry.plan.instruction.slice(0, 160)}". ` +
+                "Reassign it to another available member, do it yourself if you can, or report blocked.";
+            } else if (!result.ran || result.outcome !== "settled" || !result.replyText.trim()) {
+              const reason = result.stopReason?.trim().slice(0, 120);
+              deps.finish("failed", `${entry.bot.name} could not return a result to ${coordinator.name}${reason ? ` — ${reason}` : ""}.`);
+              return;
+            }
+          }
+          if (coordinatorNote) break waveLoop;
+        }
+      }
+      continue;
+    }
 
     const worker = resolveGroupGoalMember(decision.next, goalMembers);
     if (!worker) {

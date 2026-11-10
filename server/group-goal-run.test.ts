@@ -54,6 +54,54 @@ describe("group goal runs", () => {
     )).toEqual({ visibleText: "Safe update", decision: null });
   });
 
+  it("parses a task plan only when tasks are allowed, with missing ballot fields defaulted", () => {
+    const payload = {
+      status: "continue",
+      detail: "Plan",
+      tasks: [
+        { id: "t1", assignee: "Scout", role: "Implementer", instruction: "Draft the plan", writes: ["docs/plan.md"], dependsOn: [] },
+        { id: "t2", assignee: "Miso", instruction: "Review it", reads: ["docs/plan.md"] },
+      ],
+    };
+    const allowed = parseGroupGoalDecision(
+      `Splitting it up.\n${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(payload)}${GROUP_GOAL_CONTROL_CLOSE}`,
+      { tasksAllowed: true },
+    );
+    expect(allowed.visibleText).toBe("Splitting it up.");
+    expect(allowed.decision).toEqual({
+      status: "continue",
+      detail: "Plan",
+      tasks: [
+        { id: "t1", assignee: "Scout", role: "Implementer", instruction: "Draft the plan", reads: [], writes: ["docs/plan.md"], locks: [], dependsOn: [] },
+        { id: "t2", assignee: "Miso", instruction: "Review it", reads: ["docs/plan.md"], writes: [], locks: [], dependsOn: [] },
+      ],
+    });
+    expect(parseGroupGoalDecision(
+      `${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(payload)}${GROUP_GOAL_CONTROL_CLOSE}`,
+    ).decision).toBeNull();
+  });
+
+  it("a task plan beats a single next, and malformed plans fail closed", () => {
+    const tasks = [{ id: "t1", assignee: "Scout", instruction: "Do it" }];
+    expect(parseGroupGoalDecision(
+      `${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify({ status: "continue", next: "Scout", instruction: "Single", tasks })}${GROUP_GOAL_CONTROL_CLOSE}`,
+      { tasksAllowed: true },
+    ).decision).toMatchObject({ status: "continue", tasks });
+
+    const wrap = (tasks: unknown) =>
+      parseGroupGoalDecision(
+        `${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify({ status: "continue", tasks })}${GROUP_GOAL_CONTROL_CLOSE}`,
+        { tasksAllowed: true },
+      ).decision;
+    expect(wrap([])).toBeNull();
+    expect(wrap("nope")).toBeNull();
+    expect(wrap([{ id: "t1", instruction: "Do it" }])).toBeNull();
+    expect(wrap([{ id: "t1", assignee: "Scout", instruction: "Do it" }, { id: "t1", assignee: "Miso", instruction: "Also" }])).toBeNull();
+    expect(wrap([{ id: "t1", assignee: "Scout", instruction: "Do it", dependsOn: ["ghost"] }])).toBeNull();
+    expect(wrap([{ id: "t1", assignee: "Scout", instruction: "Do it", writes: [""] }])).toBeNull();
+    expect(wrap(Array.from({ length: 9 }, (_, i) => ({ id: `t${i}`, assignee: "Scout", instruction: "Do it" })))).toBeNull();
+  });
+
   it("removes every private envelope while the last complete one controls", () => {
     const parsed = parseGroupGoalDecision(
       `First\n${GROUP_GOAL_CONTROL_OPEN}{"status":"blocked","detail":"old"}${GROUP_GOAL_CONTROL_CLOSE}`
@@ -116,12 +164,19 @@ describe("groupGoalCoordinatorInstructions harness note", () => {
   });
 });
 
-const envelope = (decision: Record<string, string>) =>
+const envelope = (decision: Record<string, unknown>) =>
   `Update.\n${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(decision)}${GROUP_GOAL_CONTROL_CLOSE}`;
 const settled = (replyText: string): GoalStepResult => ({ ran: true, replyText, outcome: "settled" });
 
 /** Drives the real loop with scripted steps; a step that runs counts one turn, as a claimed member turn does. */
-function goalRun(options: { solo?: boolean; members?: Array<{ id: string; name: string }>; steps: Array<GoalStepResult | ((call: number) => GoalStepResult)>; cancelAfter?: number }) {
+function goalRun(options: {
+  solo?: boolean;
+  tasksAllowed?: boolean;
+  members?: Array<{ id: string; name: string }>;
+  steps: Array<GoalStepResult | ((call: number) => GoalStepResult)>;
+  cancelAfter?: number;
+  dispatchWave?: (batch: Array<{ bot: { id: string; name: string }; role?: string; assignment: string }>) => Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepResult["outcome"]; stopReason?: string | null }>>;
+}) {
   const members = options.members ?? [{ id: "solo-id", name: "Solo" }];
   const run = { goal: "Get every test passing", turnCount: 0, maxTurns: GROUP_GOAL_MAX_TURNS, finished: false };
   const calls: Array<{ bot: string; coordinator: boolean; instructions: string }> = [];
@@ -133,6 +188,8 @@ function goalRun(options: { solo?: boolean; members?: Array<{ id: string; name: 
     coordinator: members[0]!,
     members,
     solo: options.solo,
+    tasksAllowed: options.tasksAllowed,
+    ...(options.dispatchWave ? { dispatchWave: options.dispatchWave } : {}),
     cancelled: () => cancelled,
     current: (id) => members.find((member) => member.id === id),
     step: async (bot, coordinator, instructions) => {
@@ -239,7 +296,168 @@ describe("one goal-run loop for a room and a one-on-one chat", () => {
     });
     await goal.done;
     expect(goal.calls.map((call) => [call.bot, call.coordinator])).toEqual([["lead-id", true], ["scout-id", false], ["lead-id", true]]);
-    expect(goal.calls[0]!.instructions).toContain("Available room members: Lead (lead-id), Scout (scout-id).");
+    expect(goal.calls[0]!.instructions).toContain("Available room members: Lead (lead-id); Scout (scout-id).");
     expect(goal.finished).toEqual([{ status: "completed", detail: "Draft verified." }]);
+  });
+
+  it("runs a task plan in waves: one worker step per task, the coordinator evaluates afterwards", async () => {
+    const tasks = [
+      { id: "t1", assignee: "Scout", role: "Implementer", instruction: "Draft the plan", writes: ["docs/plan.md"] },
+      { id: "t2", assignee: "Miso", instruction: "List the risks" },
+      { id: "t3", assignee: "Scout", instruction: "Review the plan", reads: ["docs/plan.md"], dependsOn: ["t1"] },
+    ];
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }, { id: "miso-id", name: "Miso" }],
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks })),
+        settled("Drafted."),
+        settled("Listed."),
+        settled("Reviewed."),
+        settled(envelope({ status: "completed", detail: "Plan reviewed." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => [call.bot, call.coordinator])).toEqual([
+      ["lead-id", true], ["scout-id", false], ["miso-id", false], ["scout-id", false], ["lead-id", true],
+    ]);
+    expect(goal.calls[1]!.instructions).toContain("Your role on this run: Implementer.");
+    expect(goal.calls[1]!.instructions).toContain("Your assignment: Draft the plan");
+    expect(goal.calls[0]!.instructions).toContain('"tasks":[');
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Plan reviewed." }]);
+    expect(goal.run.turnCount).toBe(5);
+  });
+
+  it("serializes tasks of the same bot and tasks with clashing writes inside a wave", async () => {
+    const tasks = [
+      { id: "t1", assignee: "Scout", instruction: "First", writes: ["shared.md"] },
+      { id: "t2", assignee: "Miso", instruction: "Clashing", writes: ["shared.md"] },
+      { id: "t3", assignee: "Scout", instruction: "Third", writes: ["other.md"] },
+    ];
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }, { id: "miso-id", name: "Miso" }],
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks })),
+        settled("t1 done."),
+        settled("t2 done."),
+        settled("t3 done."),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "scout-id", "miso-id", "scout-id", "lead-id"]);
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+  });
+
+  it("blocks a plan whose assignee is not an active member", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }],
+      steps: [settled(envelope({ status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Ghost", instruction: "Do it" }] }))],
+    });
+    await goal.done;
+    expect(goal.calls).toHaveLength(1);
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "Lead planned a task for Ghost, who is not an available member of this channel." }]);
+  });
+
+  it("a hard worker failure inside a wave fails or blocks the run", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }, { id: "miso-id", name: "Miso" }],
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Scout", instruction: "First" },
+          { id: "t2", assignee: "Miso", instruction: "Second" },
+        ] })),
+        { ran: false, replyText: "", outcome: "unavailable" },
+        settled("Second done."),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "scout-id", "miso-id"]);
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "Scout is not available." }]);
+  });
+
+  it("blocks a team that replans the same task three times", async () => {
+    const plan = { status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Scout", instruction: "Same thing" }] };
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }],
+      steps: [
+        settled(`${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(plan)}${GROUP_GOAL_CONTROL_CLOSE}`),
+        settled("Done."),
+        settled(`${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(plan)}${GROUP_GOAL_CONTROL_CLOSE}`),
+        settled("Done."),
+        settled(`${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(plan)}${GROUP_GOAL_CONTROL_CLOSE}`),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls).toHaveLength(5);
+    expect(goal.finished[0]?.status).toBe("blocked");
+  });
+
+  it("dispatches a wave batch through dispatchWave; the run counts each child as one turn", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }, { id: "miso-id", name: "Miso" }],
+      dispatchWave: async (batch) => batch.map((task) => ({ botId: task.bot.id, ran: true, replyText: `${task.assignment} done.` })),
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Scout", instruction: "First" },
+          { id: "t2", assignee: "Miso", instruction: "Second" },
+        ] })),
+        settled(envelope({ status: "completed", detail: "Both done." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => [call.bot, call.coordinator])).toEqual([["lead-id", true], ["lead-id", true]]);
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Both done." }]);
+    expect(goal.run.turnCount).toBe(4);
+  });
+
+  it("a dispatchWave hard failure finishes the run like a single-worker failure", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }, { id: "miso-id", name: "Miso" }],
+      dispatchWave: async (batch) => batch.map((task) => task.bot.id === "scout-id"
+        ? { botId: task.bot.id, ran: false, replyText: "", outcome: "unavailable" as const }
+        : { botId: task.bot.id, ran: true, replyText: "done." }),
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Scout", instruction: "First" },
+          { id: "t2", assignee: "Miso", instruction: "Second" },
+        ] })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "Scout is not available." }]);
+    expect(goal.run.turnCount).toBe(2);
+  });
+
+  it("a batch task missing from the dispatch result fails closed", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }, { id: "miso-id", name: "Miso" }],
+      dispatchWave: async (batch) => batch.filter((task) => task.bot.id === "scout-id").map((task) => ({ botId: task.bot.id, ran: true, replyText: "done." })),
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Scout", instruction: "First" },
+          { id: "t2", assignee: "Miso", instruction: "Second" },
+        ] })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "failed", detail: "Miso could not return a result to Lead." }]);
+  });
+
+  it("without tasks allowed a tasks-only envelope fails closed like any malformed one", async () => {
+    const goal = goalRun({
+      members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }],
+      steps: [settled(envelope({ status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Scout", instruction: "Do it" }] }))],
+    });
+    await goal.done;
+    expect(goal.calls).toHaveLength(1);
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "Lead did not provide a valid next-step decision." }]);
   });
 });

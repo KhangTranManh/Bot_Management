@@ -345,6 +345,7 @@ export class RuntimeCoordinator implements Coordinator {
         ...(address.groupId ? { groupId: address.groupId } : {}) } },
       brief: req.brief.slice(0, BRIEF_MAX),
       level: req.level,
+      ...(req.reply ? { reply: req.reply } : {}),
       ...(opener?.requester.kind === "external_runtime" ? { reply: "poll" as const } : {}),
       ...(req.goalRunId ? { goalRunId: req.goalRunId } : {}),
     });
