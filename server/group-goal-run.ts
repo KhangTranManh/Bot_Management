@@ -3,10 +3,13 @@ import { noticeFailure } from "./chat-notices.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { GroupDefaultResponder } from "./store.ts";
 import type { VerifyCommand } from "../shared/wire.ts";
+import type { VerifyResult } from "./verify-run.ts";
+import type { WritesSnapshot } from "./writes-audit.ts";
 import { LEAD_MAX_WAVE_SIZE, leadBallotFromPlan, leadBatchesForWave, leadWaves, type LeadTaskPlan } from "./lead-schedule.ts";
 import type { TeamRole } from "../shared/team-roles.ts";
 import { TEAM_MAX_FIX_ROUNDS, teamPlanProblem, teamRoleRule, teamVendorProblem, testerVerdict, withTesterTask } from "./team-roles.ts";
 import { engineFailureKind } from "./drivers/engine-errors.ts";
+import { researchBudgetExceeded } from "./research-goal.ts";
 
 // Odd so the final bounded turn always falls to the coordinator for the completion decision.
 export const GROUP_GOAL_MAX_TURNS = 13;
@@ -270,15 +273,20 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   /** Run one conflict-free batch through the runtime tree; the run loop still owns turn counting and outcome handling. */
   dispatchWave?(batch: Array<{ bot: Bot; role?: string; assignment: string; readOnly?: boolean }>): Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepOutcome; stopReason?: string | null }>>;
   /** Snapshot the room folder's write state before a wave batch; undefined disables the writes audit. */
-  snapshotWrites?(): Promise<readonly string[] | undefined>;
+  snapshotWrites?(): Promise<WritesSnapshot | undefined>;
   /** Paths changed since the snapshot that no task in the batch declared. */
-  writesOutside?(before: readonly string[], declared: readonly string[]): Promise<string[] | undefined>;
-  /** Completion checks the room owns; the server runs them itself after the Tester passes (NOTE.md B0(ii)). */
+  writesOutside?(before: WritesSnapshot, declared: readonly string[]): Promise<string[] | undefined>;
+  /** Completion checks the room owns; the server runs them itself after the Tester passes. */
   verify?: ReadonlyArray<VerifyCommand>;
+  /** Why the room's checks cannot run at all (no working folder); the run blocks before its first turn. */
+  verifyRefusal?: string;
   /** Runs one check and reports its real exit code; the run never trusts a bot's own account of it. */
-  runVerify?(command: VerifyCommand): Promise<{ id: string; exitCode: number | null; output: string }>;
-  /** The upstream model vendor a member runs on; undefined or "unknown" never counts as different (B4). */
+  runVerify?(command: VerifyCommand): Promise<VerifyResult>;
+  /** The company whose model a member runs; given only where the reviewer-vendor rule applies. Undefined or
+   * "unknown" never counts as different. */
   vendorOf?(botId: string): string | undefined;
+  /** Research rooms: the goal file's wall-clock budget; past it the run stops (a negative result is still valid). */
+  budgetWallMinutes?: number;
   /** One member turn; a step counts against the run's turns once its member is claimed. A `lane` thread lets
    * wave tasks run beside each other, one provider turn per thread. */
   step(bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult>;
@@ -376,7 +384,16 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
     coordinatorNote = `${reason}Give each fix to the worker who owns that file, then have the tester run again.`;
     return undefined;
   };
+  if (deps.verify?.length && deps.verifyRefusal) {
+    deps.finish("blocked", deps.verifyRefusal);
+    return;
+  }
+  const startedWall = Date.now();
   while (!deps.cancelled() && run.turnCount < run.maxTurns) {
+    if (deps.budgetWallMinutes !== undefined && researchBudgetExceeded(Date.now() - startedWall, deps.budgetWallMinutes)) {
+      deps.finish("blocked", "The research budget ran out before the goal completed — a negative result reported as completed is still a valid outcome.");
+      return;
+    }
     const coordinatorTurn = run.turnCount + 1;
     const note = coordinatorNote;
     coordinatorNote = undefined;
@@ -435,7 +452,6 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       continue;
     }
     if (decision.status === "completed" && deps.verify?.length) {
-      // B0(ii): the server runs the room's own checks; the Tester's word alone never completes the goal.
       const failures: string[] = [];
       for (const command of deps.verify) {
         if (deps.cancelled()) return;
@@ -587,7 +603,6 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
               deps.finish("failed", `${entry.bot.name} could not return a result to ${coordinator.name}${reason ? ` — ${reason}` : ""}.`);
               return;
             } else {
-              // B0(iv): a Tester that wrote outside its report region has its PASS voided, whatever it said.
               const stop = settle(entry.bot, result.replyText,
                 outsideWrites?.length && roleOf(entry.bot.id) === "tester" && result.outcome === "settled" && testerVerdict(result.replyText) === "pass"
                   ? outsideWrites

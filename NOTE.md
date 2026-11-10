@@ -27,15 +27,16 @@ Nhãn: **CỨNG** = server chặn thật; **MỀM** = nằm trong prompt/playboo
 
 ### 1.3 Sóng song song có thể ghi đè nhau mà không ai biết — ĐÃ BÁO ĐƯỢC (B0(iii), 2026-11-10)
 - Ba điều cùng đúng: sóng song song **bật mặc định** (room 3+), mọi worker **chung một thư mục** (A3),
-  `writes` **không được kiểm** (B0(iii) chưa làm).
+  `writes` chỉ được **báo sau** (B0(iii)), không chặn.
 - Hệ quả: hai Worker cùng sóng khai `writes` khác nhau nhưng thực tế sửa cùng file → bản sau đè bản trước,
   Tester có thể PASS trên bản đã đè. Rủi ro của tính năng đang chạy, không riêng `/research`.
-- **Đã làm B0(iii):** sau mỗi batch wave, `git status --porcelain` trước/sau thư mục room
-  (`server/writes-audit.ts`); file đổi ngoài `writes` khai → activity row `ok:false` từ coordinator
-  (`<bots> changed files outside their declared writes: …`), không chặn. Non-git/không cwd → audit im lặng.
-  Hạn chế còn lại: file **đã bẩn trước wave** mà sửa tiếp không báo được (porcelain không phân biệt) —
-  hướng under-report, chấp nhận; room research cần chặt hơn thì đợi B0(iii)+hash hoặc tách worktree.
-- Phát hiện hiện là **báo cáo**, chưa hủy PASS của Tester — B0(iv) sẽ nối `settle` với audit này.
+- **Đã làm B0(iii):** snapshot trước/sau mỗi batch wave (`writesSnapshot`, `server/writes-audit.ts`):
+  `git status --porcelain -uall` + **hash nội dung** các file đang bẩn (`git hash-object`), nên sửa tiếp một file
+  đã bẩn trước wave cũng bị thấy. File đổi ngoài `writes` khai → activity row `ok:false`, không chặn.
+  Non-git/không cwd → audit im lặng. Quá 2.000 file bẩn (thư mục phụ thuộc chưa ignore) → chỉ so status.
+- Hạn chế còn lại: file bị `.gitignore` không thấy; ghi đồng thời từ lane khác (side reply) bị quy cho wave;
+  khớp `writes` theo đuôi đường dẫn (khai `index.ts` khớp mọi `*/index.ts`).
+- Audit của Tester hủy PASS (B0(iv)); audit của Worker chỉ báo.
 
 ## 2. Việc dở dang
 
@@ -95,16 +96,16 @@ trong file goal của từng project.
 | Mục | Thêm được | Mức cao nhất | Công | Ghi chú |
 |---|---|---|---|---|
 | B0(i) trần quyền theo vai | **Xong** (`c65af79db`, flag `OMB_ROLE_CEILING=1`) | CỨNG | Vừa | 4 điểm gắn: dispatch + `approvalModeNow` + just-do-it, room, tự duyệt `request.opened`, `sourceApprovalMode`. |
-| B0(ii) PASS cần bằng chứng | **Xong** (`verify` room setting, `server/index.ts` `runVerify`) | CỨNG (T2, theo §8.1) | Vừa | Server tự chạy `verify` (execFile shell, cwd room) sau khi Tester PASS; PASS cuối = VERDICT ∧ mọi exit đúng `expectExit`; lệch → vòng sửa, quá 3 → `blocked`. |
-| B0(iii) file ngoài `writes` | **Xong** (`writes-audit.ts`, git porcelain trước/sau mỗi batch wave, activity row PHÁT HIỆN SAU) | PHÁT HIỆN SAU | Vừa | Non-git → im lặng; file bẩn trước wave không báo được; B0(iv) đã nối hủy PASS. |
-| B0(iv) vùng ghi Tester | **Xong** (batch/single audit quanh turn Tester; PASS ngoài vùng báo cáo → void + vòng sửa) | PHÁT HIỆN SAU + void PASS | Nhỏ | Vùng báo cáo = `writes` của task Tester (task Tester tự tạo khai none → mọi ghi đều void). Trần `edits` chưa làm (mức bot cấu hình được ngay — §6.2 điểm 5). |
+| B0(ii) PASS cần bằng chứng | **Xong** (`WireGroup.verify`, `server/verify-run.ts`) | CỨNG cho việc chạy lệnh và đọc mã thoát; **chỉ chống T1** | Vừa | Server tự chạy `verify` (shell, cwd room; timeout kill cả cây tiến trình) khi Lead báo completed; PASS cuối = VERDICT ∧ mọi exit đúng `expectExit`; lệch → vòng sửa, quá 3 → `blocked`. Room có `verify` mà không có folder → `blocked` ngay. **Chưa chống T2:** file mà lệnh chạy (test, `package.json` scripts) bot vẫn sửa được — cần danh sách file được bảo vệ (research: khoá hash theo B2). Chỉ đặt được qua API (`PATCH`), chưa có UI. |
+| B0(iii) file ngoài `writes` | **Xong** (`writesSnapshot`: porcelain `-uall` + hash nội dung file bẩn) | PHÁT HIỆN SAU | Vừa | Xem §1.3. |
+| B0(iv) vùng ghi Tester | **Xong** (audit quanh turn Tester; PASS kèm ghi ngoài vùng báo cáo → void + vòng sửa) | PHÁT HIỆN SAU + void PASS | Nhỏ | Đường batch: vùng báo cáo = `writes` khai trong batch. **Đường đơn: vùng = rỗng** (mọi ghi đều void) — chưa thống nhất. Trần `edits` chưa làm (§6.2 điểm 5). |
 | B1 kind code/research | **Xong** (`2efcebda2`, e2e `room-kind`) | CỨNG | Nhỏ | Chưa có gì đọc nó — các luật §8.2 nối dần. |
-| B2 file goal (zod) | Có | CỨNG (định dạng, khoá hash khi duyệt) | Vừa | |
+| B2 file goal (zod) | **Xong** (research-goal.ts: schema §8.8 + loadResearchGoal + sha256; room /; duyệt qua PATCH ) | CỨNG (định dạng, khoá hash khi duyệt) | Vừa | Chỉ áp room  (§8.2); room khác không đổi. |
 | B3 Evaluator + tập khoá | Có | PHÁT HIỆN SAU (quét log tìm đường dẫn) | Vừa | Chỉ chống T1; T2 cần tách vật lý máy GPU (§8.1). |
-| B4 ràng buộc vendor | **Xong** (`model-vendor.ts` + `teamVendorProblem` trong plan check) | CỨNG (trả kế hoạch) | Nhỏ | Reviewer ≠ vendor mọi Worker trong plan; `unknown` bị trả (không đoán); re-check tự nhiên qua `vendorOf` đọc bot live mỗi lần duyệt plan (backup AI đổi vendor sẽ bị bắt). |
+| B4 ràng buộc vendor | **Xong một phần** (`model-vendor.ts` + `teamVendorProblem`) | CỨNG (trả kế hoạch) | Nhỏ | **Chỉ room `kind = "research"`** (§8.2). Vendor = công ty làm model, đọc từ họ model (`claude-…`, `gpt-…`, `glm-…`) rồi tới tiền tố provider; engine đa vendor (ZCode, Copilot, Cursor, Antigravity, Groq…) không tự là vendor; `unknown` bị trả. **Còn thiếu:** chỉ so Reviewer với Worker *trong cùng một kế hoạch* (Reviewer giao ở lượt sau thì không so); Tester chưa bị kiểm; backup AI (`bot.fallback`) không được đọc. |
 | B5 locks | Đã có | CỨNG trong một goal | — | Khoá xuyên room chỉ cần khi nhiều room dùng chung máy GPU. |
 | B6 pilot gate | Có | CỨNG (plan check) | Nhỏ | |
-| B7 ledger + guard ngân sách | Có | CỨNG nếu server tự chạy guard | Vừa | |
+| B7 ledger + guard ngân sách | **Guard xong** (researchBudgetExceeded, dep , quá hạn → blocked; kết quả âm tính vẫn hợp lệ); ledger còn chờ đặc tả §6 | CỨNG nếu server tự chạy guard | Vừa | Guard wall-minutes đã chạy; định dạng ledger do đặc tả workflow chốt (§6.4). |
 | B8 duyệt kế hoạch lần đầu | Có | CỨNG | Nhỏ | Dùng trạng thái `needs-input` sẵn có. |
 | B9 hook `/research` | Có | — | Vừa | Bảng lệnh; sửa bốn chỗ ở A4. |
 | B10 provenance | Có, phần lớn ngoài app | B (script/validator) | Lớn | Manifest + script chấm điểm Python trên máy GPU; validator so số trong báo cáo với file nguồn. |
@@ -121,8 +122,8 @@ trong file goal của từng project.
 1. ~~B0(i) — sửa luôn lỗi mục 1.1~~ **xong** (`c65af79db`).
 2. ~~B12–B13~~ **xong** (2026-11-10); kèm **B1** xong (`2efcebda2`).
 3. ~~Chốt §8~~ **xong** (4 quyết định ghi ở §8.10).
-4. ~~B0(iii), B0(ii) theo §8.3, B0(iv), B4~~ **xong** (2026-11-11, xem §9).
-5. Kế tiếp: B2, B8, B11, B7, rồi B3, B6, B9.
+4. ~~B0(iii), B0(ii) theo §8.3, B0(iv), B4~~ **xong** (2026-11-11, xem §9); phần còn thiếu ghi ở dòng từng mục §3.2.
+5. Kế tiếp: chạy thử Tầng 1 (§6.2 điểm 8) trên `D:\AGI` trước, rồi B2, B8, B11, B7, B3, B6, B9 theo cái thật sự hỏng.
 6. B10 song song (phần lớn ở phía máy GPU).
 
 B0(i) và B1 code trước khi chốt đặc tả §6 là ngoại lệ có chủ đích: dùng chung cho room code, không phụ thuộc
@@ -339,10 +340,27 @@ Tất cả chạy trên engine giả, fixture cách ly theo `docs/verification/R
 | B1 room `kind` | `2efcebda2` | `WireGroup.kind` ("code" \| "research"), PATCH `/api/groups/:id`, null clear, giá trị lạ → 400; chưa có gì đọc | e2e `room-kind`: round-trip + từ chối |
 | Gỡ file lạ | `222785ec0` | `..dist/` + `test-server-data/` khỏi tracking, ignore (blob vẫn còn trong lịch sử đã push) | — |
 | B0(iii) audit `writes` | `35d5f0f23` | `writes-audit.ts`: `gitStatusPorcelain` + `writesOutside` (thuần, xử lý rename); chạy quanh mỗi batch wave; activity row `ok:false` | Unit 6/6 (gồm git thật trên Windows); e2e `writes-audit` POSIX-gated (worker Bash thật ghi stray) — chạy trên CI Linux, Windows skip |
-| B0(ii) `verify` | commit lần này | `WireGroup.verify` (`{id, command, cwd?, timeoutSec?, expectExit?}`, tối đa 8, cwd chỉ subfolder tương đối); PATCH lưu; **server tự chạy** (`execFile shell`, cwd = thư mục room) sau khi Tester PASS; PASS cuối = `VERDICT: PASS` ∧ mọi verify đúng exit; lệch → vòng sửa (cap 3 → `blocked`) | Unit: fail → fix round (`needs-input` kèm note); pass → completed; 4 lần fail → `blocked` "kept failing after 3 fix rounds"; e2e `verify-gate` POSIX-gated (artifact `verify-ran.txt` do server ghi trong workspace là bằng chứng) |
-| B0(iv) vùng ghi Tester | commit lần này | Audit quanh turn Tester (batch và single): Tester PASS nhưng ghi ngoài vùng báo cáo (task Tester khai `writes`) → **PASS void** + `team.untested = true` + vòng sửa | Unit: void → completed bị chặn (early-completion guard) kèm note "its PASS does not count"; writes trong vùng → PASS giữ nguyên |
-| B4 vendor | commit lần này | `model-vendor.ts`: bảng driver→vendor + parse `provider/model` (và `provider\model` của ZCode); `teamVendorProblem` trong plan check: Reviewer ≠ vendor mọi Worker trong plan; `unknown` → trả kế hoạch (không đoán); re-check tự nhiên qua `vendorOf` đọc bot live mỗi lần duyệt plan | Unit: cùng vendor → `blocked` "same model vendor"; khác vendor → completed; unknown → `blocked` "unknown model vendor"; `claudeAgent` có model id lạ vẫn `anthropic` |
+| B0(ii) `verify` | `e3e6ca38b` | `WireGroup.verify` (`{id, command, cwd?, timeoutSec?, expectExit?}`, tối đa 8, cwd chỉ subfolder tương đối); PATCH lưu; **server tự chạy** (`execFile shell`, cwd = thư mục room) sau khi Tester PASS; PASS cuối = `VERDICT: PASS` ∧ mọi verify đúng exit; lệch → vòng sửa (cap 3 → `blocked`) | Unit: fail → fix round (`needs-input` kèm note); pass → completed; 4 lần fail → `blocked` "kept failing after 3 fix rounds"; e2e `verify-gate` POSIX-gated (artifact `verify-ran.txt` do server ghi trong workspace là bằng chứng) |
+| B0(iv) vùng ghi Tester | `e3e6ca38b` | Audit quanh turn Tester (batch và single): Tester PASS nhưng ghi ngoài vùng báo cáo (task Tester khai `writes`) → **PASS void** + `team.untested = true` + vòng sửa | Unit: void → completed bị chặn (early-completion guard) kèm note "its PASS does not count"; writes trong vùng → PASS giữ nguyên |
+| B4 vendor | `e3e6ca38b` | `model-vendor.ts`: bảng driver→vendor + parse `provider/model` (và `provider\model` của ZCode); `teamVendorProblem` trong plan check: Reviewer ≠ vendor mọi Worker trong plan; `unknown` → trả kế hoạch (không đoán); re-check tự nhiên qua `vendorOf` đọc bot live mỗi lần duyệt plan | Unit: cùng vendor → `blocked` "same model vendor"; khác vendor → completed; unknown → `blocked` "unknown model vendor"; `claudeAgent` có model id lạ vẫn `anthropic` |
+
+| Sửa sau đánh giá | (chưa commit) | Audit hash nội dung file bẩn + `-uall` (bắt Tester sửa file Worker vừa sửa; file trong thư mục mới; sửa lỗi bản ghi `A` nuốt bản ghi kế tiếp); `verify` tách ra `verify-run.ts`, timeout kill cả cây tiến trình (Windows để lại tiến trình con chạy tiếp), room không folder → `blocked` trước lượt đầu; `modelVendor` đọc họ model; luật vendor chỉ cho room research; bỏ tham chiếu NOTE/tên mảnh trong comment | Unit 6 file **87/87** (gồm git thật và shell thật trên Windows); e2e goal + quyền **27/27**, 2 file POSIX-gated skip; typecheck + lint sạch |
 
 **Kết quả test 2026-11-11:** unit 9 file liên quan — **109/109 qua**; e2e regression goal + quyền (`group-goal-run`, `group-goal-wait-cap`, `role-ceiling`, `room-kind`) — **27/27 qua**; typecheck `tsconfig.server.json` sạch. E2E POSIX-gated (`writes-audit`, `verify-gate`) skip trên Windows cục bộ, chờ CI Linux chạy thật.
 
 **Còn mở:** B2, B8, B11, B7 → B3, B6, B9 (theo §3.4); §8.6 (hai goal cùng room); 6 điểm §6.4 (spec workflow); trần `edits` cho Tester là cấu hình mức bot (§6.2 điểm 5).
+Phần thiếu của mục đã làm (chỉ cần cho room research): file được bảo vệ của `verify` (T2); luật vendor xuyên cả goal run và cho Tester; vùng báo cáo Tester ở đường đơn.
+E2E `writes-audit`, `verify-gate` chỉ chạy trên POSIX; chưa có bằng chứng CI đã chạy chúng.
+`scripts/testing/file-size-ratchet.test.ts` đang fail từ trước: `server/index.ts` (16.062 dòng, mốc 15.630), `shared/wire.ts` (1.026 > 1.000), `src/components/GroupView.tsx` (1.244, mốc 1.220).
+
+### 9.1 Bổ sung 2026-11-11 (bản hai)
+
+| Mục | Nội dung | Test |
+|---|---|---|
+| B2 + B8 + khoá đăng ký trước | `server/research-goal.ts`: schema zod theo §8.8 (metric/file+pointer+threshold+direction, seeds+aggregation, budget.wallMinutes, verify 1–8, heldOutPaths) + `loadResearchGoal` (sha256 theo bytes); room research: `goalFile` (đường dẫn tương đối) + `goalFileHash`; PATCH `researchGoalApprove: true` duyệt (validation fail → 400 kèm lý do schema); goal run research: không goalFile → `needs-input`, chưa duyệt → `needs-input` kèm sha256, đã duyệt mà file đổi → `blocked` (preregistration lock) | Unit `research-goal` 5/5 (gồm hash theo bytes, schema từ chối, non-JSON); e2e `research-gate` POSIX-gated: needs-input → approve → run → completed + artifact verify do server ghi → sửa file → blocked |
+| B7 guard ngân sách | dep `budgetWallMinutes` (từ goal file) + `researchBudgetExceeded`: quá hạn → `blocked` "research budget ran out… a negative result is still a valid outcome" | Unit `researchBudgetExceeded`; e2e research-gate chạy hết vòng đời gate |
+| Verify room research lấy từ goal file | `runGroupGoalOperation`: researchVerify (goal file) đè room.verify cho room research — B0(ii) không đổi | e2e research-gate (verify-ran.txt) |
+
+**Kết quả test:** unit 8 file — 108/108; e2e regression 27/27; research-gate POSIX-gated (chờ CI Linux); typecheck sạch. Đồng thời tích hợp thay đổi đang dở của phiên khác trên cùng working tree (writesSnapshot, verifyRefusal) — giữ nguyên, không đụng.
+
+**Chặn decisions (không code mù được):** B6/B11/ledger cần đặc tả state machine; B9 cần hành vi `/research` (§3.3); B3 cần quyết định điểm gắn quét event (đã có heldOutPaths trong goal file). Sáu điểm §6.4 + §8.6 điểm 4 chờ bạn.

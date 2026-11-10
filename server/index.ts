@@ -1,5 +1,4 @@
 // Import first: it reads a Cloud home's secrets off the launcher's pipe before any module can start a process.
-import { execFile } from "node:child_process";
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
 import { startFailureText } from "./start-failure-text.ts";
 import { reserveGmailDrafts } from "./gmail-draft-policy.ts";
@@ -234,8 +233,11 @@ import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
-import { gitStatusPorcelain, writesOutside } from "./writes-audit.ts";
+import { writesOutside, writesSnapshot } from "./writes-audit.ts";
+import { runVerifyCommand } from "./verify-run.ts";
+import type { VerifyCommand } from "../shared/wire.ts";
 import { modelVendor } from "./model-vendor.ts";
+import { loadResearchGoal } from "./research-goal.ts";
 import { roomNow } from "./room-now.ts";
 import { looksLikeProgressQuestion } from "../shared/auto-goal.ts";
 import type { MemberNow } from "../shared/room-now.ts";
@@ -3730,6 +3732,28 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if (body.kind === null) patch.kind = undefined;
     else if (body.kind === "code" || body.kind === "research") patch.kind = body.kind;
     else throw Object.assign(new Error("kind must be code or research"), { status: 400 });
+  }
+  if (body.goalFile !== undefined) {
+    if (body.goalFile === null) {
+      patch.goalFile = undefined;
+      patch.goalFileHash = undefined;
+    } else if (typeof body.goalFile === "string" && body.goalFile.trim() && !body.goalFile.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(body.goalFile.trim())) {
+      patch.goalFile = body.goalFile.trim();
+      patch.goalFileHash = undefined; // A new file must be approved again before a research goal may run.
+    } else {
+      throw Object.assign(new Error("goalFile must be a relative path inside the room's working folder"), { status: 400 });
+    }
+  }
+  if (body.researchGoalApprove !== undefined) {
+    if (body.researchGoalApprove !== true) throw Object.assign(new Error("researchGoalApprove must be true"), { status: 400 });
+    if ((patch.kind ?? existing.kind) !== "research") throw Object.assign(new Error("only a research room approves a goal file"), { status: 409 });
+    const goalFile = (patch.goalFile as string | undefined) ?? existing.goalFile;
+    if (!goalFile) throw Object.assign(new Error("set goalFile on the room before approving it"), { status: 400 });
+    const folder = existing.pinnedCwd ?? existing.cwd;
+    if (!folder) throw Object.assign(new Error("the research room needs a working folder before its goal file can be approved"), { status: 409 });
+    const loaded = loadResearchGoal(join(folder, goalFile));
+    if (!loaded.ok) throw Object.assign(new Error(loaded.error), { status: 400 });
+    patch.goalFileHash = loaded.hash;
   }
   if (body.verify !== undefined) {
     if (body.verify === null) patch.verify = undefined;
@@ -10970,6 +10994,28 @@ async function runGroupGoalOperation(args: {
   if (!run) return;
   const skillAuthoringClaim = { claimed: false };
   const room = store.group(args.groupId);
+  // A research room (NOTE.md §8.2) never starts a goal softly: the goal file must exist, validate against
+  // the schema, and be approved (hash locked); a locked file that changed on disk blocks the run.
+  let researchVerify: VerifyCommand[] | undefined;
+  let budgetWallMinutes: number | undefined;
+  if (room?.kind === "research") {
+    const folder = store.pinGroupCwd(args.groupId, args.threadId) ?? room.cwd ?? undefined;
+    const loaded = room.goalFile && folder ? loadResearchGoal(join(folder, room.goalFile)) : { ok: false as const, error: "this research room has no goal file set (goalFile)" };
+    if (!loaded.ok) {
+      finishGroupGoalRun(args.groupId, args.operation, "needs-input", `${loaded.error}. Set goalFile on the room, then approve it with PATCH { "researchGoalApprove": true }.`);
+      return;
+    }
+    if (room.goalFileHash && room.goalFileHash !== loaded.hash) {
+      finishGroupGoalRun(args.groupId, args.operation, "blocked", "The research goal file changed after it was approved (preregistration lock) — restore the approved version or re-approve the new one.");
+      return;
+    }
+    if (!room.goalFileHash) {
+      finishGroupGoalRun(args.groupId, args.operation, "needs-input", `Approve the research goal file before any run (sha256 ${loaded.hash.slice(0, 16)}…): PATCH the room with { "researchGoalApprove": true }.`);
+      return;
+    }
+    researchVerify = loaded.goal.verify;
+    budgetWallMinutes = loaded.goal.budget.wallMinutes;
+  }
   await runGoalRun({
     run,
     coordinator: args.coordinator,
@@ -10991,33 +11037,29 @@ async function runGroupGoalOperation(args: {
       : Promise.resolve(batch.map((task) => ({ botId: task.bot.id, ran: false, replyText: "", outcome: "dispatch_failed" as const }))),
     snapshotWrites: async () => {
       const cwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
-      return cwd ? gitStatusPorcelain(cwd) : undefined;
+      return cwd ? writesSnapshot(cwd) : undefined;
     },
     writesOutside: async (before, declared) => {
       const cwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
       if (!cwd) return undefined;
-      const after = await gitStatusPorcelain(cwd);
+      const after = await writesSnapshot(cwd);
       return after ? writesOutside(before, after, declared) : undefined;
     },
-    ...(room && !room.dm && room.verify?.length ? { verify: room.verify } : {}),
+    verify: researchVerify ?? (room && !room.dm && room.verify?.length ? room.verify : undefined),
+    budgetWallMinutes,
+    ...(room && !room.dm && room.verify?.length && !store.pinGroupCwd(args.groupId, args.threadId)
+      ? { verifyRefusal: "This room has completion checks but no working folder to run them in. Set the room's folder, then send the goal again." }
+      : {}),
     runVerify: async (command) => {
-      const roomCwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
-      const cwd = command.cwd ? join(roomCwd ?? process.cwd(), command.cwd) : roomCwd;
-      return await new Promise((resolve) => {
-        execFile(command.command, {
-          cwd: cwd ?? process.cwd(), shell: true, windowsHide: true,
-          timeout: (command.timeoutSec ?? 600) * 1_000, maxBuffer: 16 * 1024 * 1024,
-        }, (err, stdout, stderr) => resolve({
-          id: command.id,
-          exitCode: err && typeof (err as NodeJS.ErrnoException & { code?: number | string }).code === "number" ? (err as { code: number }).code : err ? null : 0,
-          output: `${stdout ?? ""}${stderr ?? ""}`.slice(-2_000),
-        }));
-      });
+      const roomCwd = store.pinGroupCwd(args.groupId, args.threadId);
+      return roomCwd ? runVerifyCommand(command, roomCwd) : { id: command.id, exitCode: null, output: "the room has no working folder" };
     },
-    vendorOf: (botId) => {
-      const bot = store.bot(botId);
-      return bot ? modelVendor(registry.cliTarget(bot.modelSelection.instanceId)?.driverKind, bot.modelSelection.model) : undefined;
-    },
+    ...(room?.kind === "research" ? {
+      vendorOf: (botId: string) => {
+        const bot = store.bot(botId);
+        return bot ? modelVendor(registry.cliTarget(bot.modelSelection.instanceId)?.driverKind, bot.modelSelection.model) : undefined;
+      },
+    } : {}),
     finish: (status, detail, text) => finishGroupGoalRun(args.groupId, args.operation, status, detail, text),
     progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),
     note: (text) => store.appendMessage(args.threadId, {
