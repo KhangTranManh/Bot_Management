@@ -44,3 +44,7 @@ deploy/podman/.env.*
 # Stray build output and local test data (never meant to be tracked)
 ..dist/
 test-server-data/
+
+# Session-local ZCode files and stray preview artifacts
+.zcode/
+office-preview.html
