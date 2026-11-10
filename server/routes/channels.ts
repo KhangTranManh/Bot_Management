@@ -89,7 +89,7 @@ export interface ChannelRouteDeps {
     queueId: undefined,
     options: { via?: "api"; sender?: ResolvedSender; trigger?: UsageTrigger; threadId?: string; mentions?: string[] },
   ): Message;
-  startGoalSideReply(
+  startRoomSideReply(
     groupId: string,
     threadId: string,
     text: string,
@@ -114,7 +114,7 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
     store, cfg, broadcast, notificationListed, actorKey, threadStarters, phoneSecretSubmissions, sendSequencer, roomMemberContexts, skillReview,
     groupSpeakers, groupTurnOperations, lastReply, cloudThreadRefusal, messageSender, usageTriggerFor, publicGroupState,
     groupWithThread, updateChannel, groupIsWorking, groupThreadIsWorking, readCursor, pageSize, messagePage,
-    resolveReplyTarget, runningTurnInstance, startGroupTurn, startGoalSideReply, engineSteersImages, applyRoomHoldsFromMessage, cancelGroupTurnOperations,
+    resolveReplyTarget, runningTurnInstance, startGroupTurn, startRoomSideReply, engineSteersImages, applyRoomHoldsFromMessage, cancelGroupTurnOperations,
     drainQueuedChannelSends, clearTurnDigestState, closeOpenApprovals, revokeInternalCapabilitiesForThread,
     stagedSkillCleanupsForThread, rejectDeletedThreadSkillStages,
   } = deps;
@@ -412,7 +412,7 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
           const threadWorking = groupThreadIsWorking(current.id, threadId);
           const decision = admit("room", {}, { roomWorking: threadWorking, threadWorking });
           if (decision.action === "queue") {
-            const side = channelMode === "chat" ? startGoalSideReply(current.id, threadId, text, replyTo, sendId, { via, sender: messageSender(auth), trigger, mentions }) : undefined;
+            const side = channelMode === "chat" ? startRoomSideReply(current.id, threadId, text, replyTo, sendId, { via, sender: messageSender(auth), trigger, mentions }) : undefined;
             if (side) return { ok: true as const, threadId, message: side };
             const queued = queueChannelMessage(current.id, threadId, text, {
               replyToId: replyTo?.id,

@@ -1,0 +1,41 @@
+# Workflow nhóm — 1 Lead + tối đa 5 bot
+
+Việc chạy bằng cơ chế goal; chat là để người nói chuyện với nhóm. Mỗi bước là một commit riêng, có test,
+và cuối cùng chạy regression.
+
+## Giai đoạn 1 — Ổn định nền
+
+- **1.1** Tin của người gửi lead không huỷ việc lead đã giao: worker chạy tiếp, chỉ Stop mới huỷ cả cây.
+- **1.2** Lượt chỉ-đọc (lane trả lời, Tester, Reviewer) bị chặn ghi file thật, không chỉ bằng prompt.
+- **1.3** Bỏ cờ `OMB_LEAD_DEPT_CAP`: room từ 3 bot chạy sóng song song mặc định, công tắc tắt theo room.
+
+## Giai đoạn 2 — Vai trò và luồng
+
+- **2.1** Vai cố định trong hồ sơ bot: Lead / Worker / Tester / Reviewer; lead chỉ giao đúng vai.
+- **2.2** Task Worker bắt buộc khai `writes`; cùng file thì nối tiếp.
+- **2.3** Cổng Tester: không có Tester pass thì không được `completed`.
+- **2.4** Vòng sửa: Tester fail → giao lại đúng Worker kèm lỗi, tối đa N vòng rồi `blocked`.
+- **2.5** Ngân sách theo vòng (kế hoạch → làm → test) thay cho 13 lượt.
+- **2.6** Tự nhận diện: room rảnh + yêu cầu làm việc → chạy goal; `/goal`, `/chat` ép chế độ; công tắc theo room.
+
+## Giai đoạn 3 — Chịu lỗi
+
+- **3.1** Bot hết quota / lỗi tài khoản → "không khả dụng", tự giao lại cho bot rảnh cùng vai.
+- **3.2** Engine dự phòng theo bot (tuỳ chọn).
+
+## Giai đoạn 4 — Theo dõi
+
+- **4.1** Room nhận "việc đang làm" mới nhất của từng lane; panel và sidebar hiện công cụ, file, thời gian.
+- **4.2** Kết quả worker và tin dài thu gọn thành thẻ 2–3 dòng.
+- **4.3** Hỏi tiến độ → server tự tổng hợp trả lời, không chiếm lượt bot.
+
+## Chưa chắc chắn
+
+- 1.2: engine nào chặn ghi thật được; có thể phải dùng chế độ xin phép.
+- 3.2: đổi engine giữa chừng mất ngữ cảnh phiên; task chạy lại trong lane mới.
+
+## Tiến độ
+
+| Bước | Trạng thái | Commit | Ghi chú |
+|---|---|---|---|
+| 1.1 | Xong | (commit này) | Side-reply mở rộng cho mọi lúc room bận, không chỉ goal. Gốc yêu cầu là thành viên rảnh. Stop vẫn dừng cả cây (có chủ đích, test `direct-coordination` khẳng định). |

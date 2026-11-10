@@ -24,6 +24,7 @@ let queueFinishGate = "";
 let stopScopedLeadFinishGate = "";
 let waveHeldFinishGate = "";
 let sideHeldFinishGate = "";
+let chatSlowFinishGate = "";
 let base = "";
 let stderr = "";
 
@@ -61,6 +62,7 @@ beforeAll(async () => {
   stopScopedLeadFinishGate = join(home, "stop-scoped-lead-finish");
   waveHeldFinishGate = join(home, "wave-held-finish");
   sideHeldFinishGate = join(home, "side-held-finish");
+  chatSlowFinishGate = join(home, "chat-slow-finish");
   writeFileSync(stopScopedLeadFinishGate, "allow initial goal delegation");
   const data = join(home, ".openmausbot");
   const staticDir = join(home, "static");
@@ -195,6 +197,27 @@ beforeAll(async () => {
             "The scheduled review is complete.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Scheduled team review completed.\"}</openmaus-goal>",
           ]),
           FAKE_CLAUDE_REPLY_STATE: join(home, "routine-goal-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      chatSlow: {
+        driver: "claudeAgent",
+        displayName: "Chat slow fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "slow",
+          FAKE_CLAUDE_SLOW_FINISH_GATE: chatSlowFinishGate,
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Slow work finished."]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "chat-slow-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      chatFree: {
+        driver: "claudeAgent",
+        displayName: "Chat free fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["The slow teammate is still on it."]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "chat-free-replies.txt"),
         },
         config: { cli: FAKE_CLAUDE },
       },
@@ -1312,5 +1335,33 @@ describe("goal-driven channel runs", () => {
 
     writeFileSync(sideHeldFinishGate, "release the held plan worker");
     await expect.poll(goalStatus, { timeout: hostTimeout(15_000) }).toBe("completed");
+  });
+
+  it("answers a teammate named in ordinary chat beside a running turn without stopping it", async () => {
+    const slow = (await api("POST", "/api/bots", { name: "Chat slow", modelSelection: { instanceId: "chatSlow", model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const free = (await api("POST", "/api/bots", { name: "Chat free", modelSelection: { instanceId: "chatFree", model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const anchor = (await api("POST", "/api/bots", { name: "Chat anchor", modelSelection: { instanceId: "chatFree", model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const room = (await api("POST", "/api/groups", {
+      name: "Chat team",
+      memberIds: [slow.id, free.id, anchor.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: slow.id } },
+    })).body.group;
+    const roomState = async () => (await api("GET", "/api/bots?messages=40")).body.groups.find((candidate: { id: string }) => candidate.id === room.id);
+
+    expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "@Chat slow build the thing", sendId: "chat_send_slow_123456789012" })).status).toBe(202);
+    await expect.poll(async () => (await roomState())?.working, { timeout: hostTimeout(15_000) }).toBe(true);
+
+    const asked = await api("POST", `/api/groups/${room.id}/messages`, { text: "@Chat free how is it going?", sendId: "chat_send_free_123456789012" });
+    expect(asked.status).toBe(202);
+    expect(asked.body.queued).not.toBe(true);
+    await expect.poll(async () => (await roomState())?.messages.some((message: { kind: string; from?: { name?: string }; roomRequest?: { phase?: string }; tool?: { ok?: boolean } }) =>
+      message.kind === "activity" && message.roomRequest?.phase === "result" && message.from?.name === "Chat free" && message.tool?.ok === true), { timeout: hostTimeout(15_000) }).toBe(true);
+    expect((await roomState())?.working).toBe(true);
+
+    writeFileSync(chatSlowFinishGate, "release the slow turn");
+    await expect.poll(async () => (await roomState())?.messages.some((message: { kind: string; role: string; text?: string }) =>
+      message.kind === "text" && message.role === "bot" && message.text === "Slow work finished."), { timeout: hostTimeout(15_000) }).toBe(true);
+    const stopped = (await roomState())?.messages.filter((message: { tool?: { name?: string } }) => /Stopped|cancel/i.test(message.tool?.name ?? ""));
+    expect(stopped).toEqual([]);
   });
 });
