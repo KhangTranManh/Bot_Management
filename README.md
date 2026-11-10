@@ -38,6 +38,20 @@ who checks, what happens when you interrupt, and how you see what everyone is do
 | **Reviewers read only** | Review tasks run as consultations at the *Ask* level: any write or command waits for your approval. Hard-enforced with `OMB_ROLE_CEILING=1` (a consultation node's recorded level caps the turn and the app's auto-approvals); without the flag it relies on the model following its role. |
 | **Out of AI usage** | A member whose model hits its usage limit or runs out of credits leaves the run; the Lead is told to hand its task to a free member of the same role. Bots with a backup AI configured keep going on it, as before. |
 
+### Research rooms
+
+A room set to `kind: "research"` runs goals only against a preregistered goal file (JSON in the room's folder:
+metric, seeds, budget, checks, optional pilot size, handoff files and held-out paths). Set it through the API for
+now: `PATCH /api/groups/:id` with `goalFile`, then `researchGoalApprove: true`, which locks the file's hash.
+
+| | |
+|---|---|
+| **Approved file or no run** | A run stops at *needs input* until the file validates and is approved; a file edited after approval blocks the run. A room with a Chief of Staff in it does not run. |
+| **Done means the metric** | The server runs the file's checks, then reads the metric through its JSON pointer and aggregates the seeds. Below the threshold the Lead plans the next experiment; `maxExperimentRounds` and `stopAfterFlatRounds` end the research with a negative result. |
+| **Budget across runs** | The budget counts active time over every run of the approved file, from the server's ledger in its own data folder. |
+| **Pilot, handoff, held-out** | The first accepted plan is held to `pilot.maxTasks`; completion waits for `handoff.expectsFiles`; a member's tool call naming a held-out path is reported. |
+| **Roles** | The role ceiling is always on in a research room. An **Evaluator** role joins Reviewer under the vendor rule: neither may run the same model maker as a Worker in the plan. `/research` sends a request as a goal there. |
+
 ### Talking to a team that is working
 
 | | |
@@ -60,10 +74,14 @@ who checks, what happens when you interrupt, and how you see what everyone is do
   files are not seen.
 - Without `verify` commands, PASS rests on the Tester's `VERDICT` line. With them, the files those commands run
   (tests, package scripts) can still be edited by the bots.
-- The role permission ceiling needs `OMB_ROLE_CEILING=1`; without it, consult-at-Ask relies on the model.
+- Outside research rooms the role permission ceiling needs `OMB_ROLE_CEILING=1`; without it, consult-at-Ask
+  relies on the model.
 - API keys are stored as plain text in `config.json` (inherited from upstream).
 - A local machine has no filesystem sandbox: out-of-bounds writes are detected after the fact at best.
-- Research results need provenance (manifest + validator) before their numbers can be trusted.
+- The research metric file and the scripts that write it live in the room folder, where bots can edit them; until
+  results come with provenance (manifest + validator) a reached threshold shows the checks agreed, not that the
+  numbers are honest.
+- The held-out scan sees only tool calls the engine reports; reading a path through another route goes unseen.
 - The 13-turn goal limit pauses a run without a hand-off summary; sending the goal again restarts the count.
 
 ### Engines and fixes

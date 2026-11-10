@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TeamRole } from "../shared/team-roles.ts";
 import type { WritesSnapshot } from "./writes-audit.ts";
+import type { MetricReading } from "./research-goal.ts";
 import {
   GROUP_GOAL_CONTROL_CLOSE,
   GROUP_GOAL_CONTROL_OPEN,
@@ -14,6 +15,7 @@ import {
   selectGroupGoalCoordinator,
   type GoalRunEnd,
   type GoalStepResult,
+  type ResearchRunRules,
 } from "./group-goal-run.ts";
 
 const members = [
@@ -184,9 +186,11 @@ function goalRun(options: {
   snapshotWrites?: () => Promise<WritesSnapshot | undefined>;
   writesOutside?: (before: WritesSnapshot, declared: readonly string[]) => Promise<string[] | undefined>;
   verifyRefusal?: string;
-  researchRules?: { heldOutPaths?: readonly string[]; pilotMaxTasks?: number; handoffExpectsFiles?: readonly string[] };
-  scanHeldOut?: (botId: string) => Promise<string[]>;
+  research?: Partial<ResearchRunRules>;
+  heldOutTouched?: (botId: string, sinceMs: number) => Promise<string[]>;
   missingHandoffFiles?: () => Promise<string[]>;
+  readMetric?: () => Promise<MetricReading>;
+  recordMetric?: (value: number) => void;
   dispatchWave?: (batch: Array<{ bot: { id: string; name: string }; role?: string; assignment: string }>) => Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepResult["outcome"]; stopReason?: string | null }>>;
 }) {
   const members = options.members ?? [{ id: "solo-id", name: "Solo" }];
@@ -209,9 +213,11 @@ function goalRun(options: {
     ...(options.verifyRefusal ? { verifyRefusal: options.verifyRefusal } : {}),
     ...(options.snapshotWrites ? { snapshotWrites: options.snapshotWrites } : {}),
     ...(options.writesOutside ? { writesOutside: options.writesOutside } : {}),
-    ...(options.researchRules ? { researchRules: options.researchRules } : {}),
-    ...(options.scanHeldOut ? { scanHeldOut: options.scanHeldOut } : {}),
+    ...(options.research ? { research: { budgetWallMinutes: 600, budgetSpentMs: 0, ...options.research } } : {}),
+    ...(options.heldOutTouched ? { heldOutTouched: options.heldOutTouched } : {}),
     ...(options.missingHandoffFiles ? { missingHandoffFiles: options.missingHandoffFiles } : {}),
+    ...(options.readMetric ? { readMetric: options.readMetric } : {}),
+    ...(options.recordMetric ? { recordMetric: options.recordMetric } : {}),
     ...(options.dispatchWave ? { dispatchWave: options.dispatchWave } : {}),
     cancelled: () => cancelled,
     current: (id) => members.find((member) => member.id === id),
@@ -816,7 +822,7 @@ describe("room verify checks and tester writes", () => {
   });
 });
 
-describe("B3/B6/B11 research rules and B4 evaluator vendor", () => {
+describe("research room rules", () => {
   const researchPlan = (tasks: Array<Record<string, unknown>>) => settled(envelope({ status: "continue", detail: "Plan", tasks }));
 
   it("the pilot gate refuses a first plan larger than the goal file allows, then lets a smaller one run", async () => {
@@ -824,7 +830,7 @@ describe("B3/B6/B11 research rules and B4 evaluator vendor", () => {
       tasksAllowed: true,
       members: [{ id: "lead-id", name: "Lead" }, { id: "a-id", name: "A" }, { id: "b-id", name: "B" }],
       roles: { "a-id": "worker", "b-id": "worker" },
-      researchRules: { pilotMaxTasks: 1 },
+      research: { pilotMaxTasks: 1 },
       steps: [
         researchPlan([
           { id: "t1", assignee: "A", instruction: "One", writes: ["a.txt"] },
@@ -847,7 +853,7 @@ describe("B3/B6/B11 research rules and B4 evaluator vendor", () => {
       tasksAllowed: true,
       members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
       roles: { "worker-id": "worker" },
-      researchRules: { handoffExpectsFiles: ["results/metrics.json"] },
+      research: { handoffExpectsFiles: ["results/metrics.json"] },
       missingHandoffFiles: async () => [],
       steps: [
         researchPlan([{ id: "t1", assignee: "Worker", instruction: "Prepare", writes: ["run.py"] }]),
@@ -864,7 +870,7 @@ describe("B3/B6/B11 research rules and B4 evaluator vendor", () => {
       tasksAllowed: true,
       members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
       roles: { "worker-id": "worker" },
-      researchRules: { handoffExpectsFiles: ["results/metrics.json"] },
+      research: { handoffExpectsFiles: ["results/metrics.json"] },
       missingHandoffFiles: async () => ["results/metrics.json"],
       steps: [
         researchPlan([{ id: "t1", assignee: "Worker", instruction: "Prepare", writes: ["run.py"] }]),
@@ -884,8 +890,8 @@ describe("B3/B6/B11 research rules and B4 evaluator vendor", () => {
       tasksAllowed: true,
       members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
       roles: { "worker-id": "worker" },
-      researchRules: { heldOutPaths: ["eval/heldout.json"] },
-      scanHeldOut: async (botId) => (botId === "worker-id" ? ["eval/heldout.json"] : []),
+      research: { heldOutPaths: ["eval/heldout.json"] },
+      heldOutTouched: async (botId) => (botId === "worker-id" ? ["eval/heldout.json"] : []),
       steps: [
         researchPlan([{ id: "t1", assignee: "Worker", instruction: "Prepare", writes: ["run.py"] }]),
         settled("Prepared."),
@@ -896,4 +902,106 @@ describe("B3/B6/B11 research rules and B4 evaluator vendor", () => {
     expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
     expect(goal.notes.some((note) => note.includes("touched held-out paths") && note.includes("eval/heldout.json"))).toBe(true);
   });
+  it("the pilot gate keeps refusing an oversized first plan until a plan within it is accepted", async () => {
+    const big = researchPlan([
+      { id: "t1", assignee: "A", instruction: "One", writes: ["a.txt"] },
+      { id: "t2", assignee: "B", instruction: "Two", writes: ["b.txt"] },
+    ]);
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "a-id", name: "A" }, { id: "b-id", name: "B" }],
+      roles: { "a-id": "worker", "b-id": "worker" },
+      research: { pilotMaxTasks: 1 },
+      steps: [big, big, big],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("the pilot plan may schedule at most 1 task(s)") }]);
+  });
+
+  it("budget already spent by earlier runs of the same goal file stops the run before any turn", async () => {
+    const goal = goalRun({
+      members: [{ id: "lead-id", name: "Lead" }],
+      research: { budgetWallMinutes: 30, budgetSpentMs: 31 * 60_000 },
+      steps: [settled(envelope({ status: "completed", detail: "Done." }))],
+    });
+    await goal.done;
+    expect(goal.calls).toHaveLength(0);
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("across every run of this goal file") }]);
+  });
+
+  it("a metric below the threshold keeps the run going and is recorded; one at the threshold completes it", async () => {
+    const readings = [0.61, 0.74];
+    const recorded: number[] = [];
+    const goal = goalRun({
+      members: [{ id: "lead-id", name: "Lead" }],
+      research: { metric: { threshold: 0.72, direction: "at-least" } },
+      readMetric: async () => ({ ok: true, value: readings.shift()! }),
+      recordMetric: (value) => recorded.push(value),
+      steps: [settled(envelope({ status: "completed", detail: "Done." }))],
+    });
+    await goal.done;
+    expect(recorded).toEqual([0.61, 0.74]);
+    expect(goal.calls[1]!.instructions).toContain("the metric is 0.61, the goal file needs at-least 0.72");
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+  });
+
+  it("an unreadable metric never completes the goal", async () => {
+    const goal = goalRun({
+      members: [{ id: "lead-id", name: "Lead" }],
+      research: { metric: { threshold: 0.72, direction: "at-least" } },
+      readMetric: async () => ({ ok: false, reason: "results/metrics.json is missing or not valid JSON" }),
+      steps: [settled(envelope({ status: "completed", detail: "Done." }))],
+      cancelAfter: 3,
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([]);
+    expect(goal.calls[1]!.instructions).toContain("results/metrics.json is missing");
+  });
+
+  it("experiment rounds counted across runs stop the research with a negative result", async () => {
+    const goal = goalRun({
+      members: [{ id: "lead-id", name: "Lead" }],
+      research: { metric: { threshold: 0.72, direction: "at-least" }, maxExperimentRounds: 3, priorMetricValues: [0.5, 0.55] },
+      readMetric: async () => ({ ok: true, value: 0.6 }),
+      steps: [settled(envelope({ status: "completed", detail: "Done." }))],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("negative result: 3 experiment rounds") }]);
+  });
+
+  it("a Reviewer picked in a later turn is still held to the vendor rule against earlier Workers", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }, { id: "rev-id", name: "Rev" }],
+      roles: { "worker-id": "worker", "rev-id": "reviewer" },
+      vendorOf: () => "anthropic",
+      steps: [
+        researchPlan([{ id: "t1", assignee: "Worker", instruction: "Build", writes: ["a.ts"] }]),
+        settled("Built."),
+        settled(envelope({ status: "continue", next: "Rev", instruction: "Review a.ts", detail: "Reviewing" })),
+        settled(envelope({ status: "needs-input", detail: "Pick another reviewer." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "worker-id", "lead-id", "lead-id"]);
+    expect(goal.calls[3]!.instructions).toContain("same model vendor (anthropic) as Worker Worker");
+  });
+
+  it("an Evaluator that wrote outside its report region has its results discounted", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "eval-id", name: "Eve" }, { id: "tester-id", name: "Tess" }],
+      roles: { "eval-id": "evaluator", "tester-id": "tester" },
+      snapshotWrites: async () => new Map(),
+      writesOutside: async () => ["results/metrics.json"],
+      steps: [
+        settled(envelope({ status: "continue", next: "Eve", instruction: "Evaluate", detail: "Evaluating" })),
+        settled("Accuracy 0.9"),
+        settled(envelope({ status: "needs-input", detail: "Stop." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls[2]!.instructions).toContain("(Evaluator) changed files outside its report region (results/metrics.json)");
+  });
 });
+

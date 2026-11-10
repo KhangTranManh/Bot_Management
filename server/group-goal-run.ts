@@ -9,7 +9,23 @@ import { LEAD_MAX_WAVE_SIZE, leadBallotFromPlan, leadBatchesForWave, leadWaves, 
 import type { TeamRole } from "../shared/team-roles.ts";
 import { TEAM_MAX_FIX_ROUNDS, teamPlanProblem, teamRoleRule, teamVendorProblem, testerVerdict, withTesterTask } from "./team-roles.ts";
 import { engineFailureKind } from "./drivers/engine-errors.ts";
-import { researchBudgetExceeded } from "./research-goal.ts";
+import { metricMeetsThreshold, researchBudgetExceeded, researchStopReason, type MetricReading } from "./research-goal.ts";
+
+export interface ResearchRunRules {
+  budgetWallMinutes: number;
+  /** Active time earlier runs of the same approved file already spent. */
+  budgetSpentMs: number;
+  /** The first accepted plan of the run may schedule at most this many tasks. */
+  pilotMaxTasks?: number;
+  handoffExpectsFiles?: readonly string[];
+  heldOutPaths?: readonly string[];
+  /** Absent: the run completes on the checks alone. */
+  metric?: { threshold: number; direction: "at-least" | "at-most" };
+  maxExperimentRounds?: number;
+  stopAfterFlatRounds?: number;
+  /** Metric readings earlier runs of the same approved file took, oldest first. */
+  priorMetricValues?: readonly number[];
+}
 
 // Odd so the final bounded turn always falls to the coordinator for the completion decision.
 export const GROUP_GOAL_MAX_TURNS = 13;
@@ -285,18 +301,16 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   /** The company whose model a member runs; given only where the reviewer-vendor rule applies. Undefined or
    * "unknown" never counts as different. */
   vendorOf?(botId: string): string | undefined;
-  /** Research rooms: the goal file's wall-clock budget; past it the run stops (a negative result is still valid). */
-  budgetWallMinutes?: number;
-  /** Research rooms: the goal file's pilot gate, GPU handoff files and held-out paths (B3/B6/B11). */
-  researchRules?: {
-    heldOutPaths?: readonly string[];
-    pilotMaxTasks?: number;
-    handoffExpectsFiles?: readonly string[];
-  };
-  /** Held-out paths mentioned in a member's event log (B3, detected after the fact); undefined disables the scan. */
-  scanHeldOut?(botId: string): Promise<string[]>;
-  /** Files the goal file's GPU handoff expects that are missing from the room folder (B11). */
+  /** A research room's approved goal file, as the run enforces it; absent for every other room. */
+  research?: ResearchRunRules;
+  /** Files the goal file's GPU handoff expects that are missing from the room folder. */
   missingHandoffFiles?(): Promise<string[]>;
+  /** Held-out paths a member's own tool calls named since `sinceMs` (detected after the fact). */
+  heldOutTouched?(botId: string, sinceMs: number): Promise<string[]>;
+  /** The goal file's metric as it stands now in the room folder. */
+  readMetric?(): Promise<MetricReading>;
+  /** Keeps one metric reading in the research ledger. */
+  recordMetric?(value: number): void;
   /** One member turn; a step counts against the run's turns once its member is claimed. A `lane` thread lets
    * wave tasks run beside each other, one provider turn per thread. */
   step(bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult>;
@@ -362,7 +376,10 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   const roleOf = (botId: string): TeamRole | undefined => roles?.[botId];
   const tester = roles ? goalMembers.find((member) => !member.hidden && roles[member.id] === "tester") : undefined;
   const team = { untested: false, fixRounds: 0, planRefusals: 0, earlyCompletions: 0 };
-  let planSeen = false;
+  let pilotAccepted = false;
+  /** Workers who have taken work in this run, for the vendor rule on later judges. */
+  const workersSeen = new Map<string, string>();
+  const metricValues = [...(deps.research?.priorMetricValues ?? [])];
   /** Members whose AI ran out of usage during this run: no more tasks go to them. */
   const outOfRun = new Set<string>();
   /** Takes a member out of the run for its usage limit and names who can take its task; a reason means the run stops. */
@@ -380,6 +397,12 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   const settle = (bot: Bot, replyText: string, outsideWrites?: readonly string[]): string | undefined => {
     const role = roleOf(bot.id);
     if (role === "worker") team.untested = true;
+    if (role === "evaluator" && outsideWrites?.length) {
+      team.untested = true;
+      coordinatorNote = `${bot.name} (Evaluator) changed files outside its report region (${outsideWrites.slice(0, 5).join(", ")}): its results do not count. ` +
+        "Have the tester check the work again before calling it done.";
+      return undefined;
+    }
     if (role !== "tester") return undefined;
     const verdict = testerVerdict(replyText);
     if (verdict === "pass" && !outsideWrites?.length) {
@@ -401,8 +424,9 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   }
   const startedWall = Date.now();
   while (!deps.cancelled() && run.turnCount < run.maxTurns) {
-    if (deps.budgetWallMinutes !== undefined && researchBudgetExceeded(Date.now() - startedWall, deps.budgetWallMinutes)) {
-      deps.finish("blocked", "The research budget ran out before the goal completed — a negative result reported as completed is still a valid outcome.");
+    const research = deps.research;
+    if (research && researchBudgetExceeded(research.budgetSpentMs + Date.now() - startedWall, research.budgetWallMinutes)) {
+      deps.finish("blocked", `The research budget of ${research.budgetWallMinutes} minutes across every run of this goal file ran out before the goal completed — a negative result is still a valid outcome.`);
       return;
     }
     const coordinatorTurn = run.turnCount + 1;
@@ -462,8 +486,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       coordinatorNote = "Not done yet: the latest changes have not passed the tester. Plan a tester task, or fix what the tester reported.";
       continue;
     }
-    if (decision.status === "completed" && deps.researchRules?.handoffExpectsFiles?.length && deps.missingHandoffFiles) {
-      // B11 GPU handoff: the files the goal file expects must be in the room folder before the run may end.
+    if (decision.status === "completed" && deps.research?.handoffExpectsFiles?.length && deps.missingHandoffFiles) {
       const missing = await deps.missingHandoffFiles();
       if (missing.length) {
         deps.finish("needs-input", `The GPU handoff is missing files the goal file expects: ${missing.slice(0, 8).join(", ")}. Place them in the room's folder, then send the goal again — the work so far is kept.`);
@@ -489,6 +512,25 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
         continue;
       }
     }
+    const metric = deps.research?.metric;
+    if (decision.status === "completed" && metric && deps.readMetric) {
+      const reading = await deps.readMetric();
+      if (!reading.ok) {
+        coordinatorNote = `Not done yet: the goal file's metric could not be read (${reading.reason}). Produce it with the goal file's checks, then call completed again.`;
+        continue;
+      }
+      deps.recordMetric?.(reading.value);
+      if (!metricMeetsThreshold(reading.value, metric)) {
+        metricValues.push(reading.value);
+        const stop = researchStopReason(metricValues, { metric, maxExperimentRounds: deps.research?.maxExperimentRounds, stopAfterFlatRounds: deps.research?.stopAfterFlatRounds });
+        if (stop) {
+          deps.finish("blocked", `The research stops with a negative result: ${stop}. The latest metric is ${reading.value} (threshold ${metric.direction} ${metric.threshold}).`);
+          return;
+        }
+        coordinatorNote = `Not done yet: the metric is ${reading.value}, the goal file needs ${metric.direction} ${metric.threshold}. Plan the next experiment.`;
+        continue;
+      }
+    }
     if (decision.status !== "continue") {
       deps.finish(decision.status, decision.detail);
       return;
@@ -510,16 +552,16 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
         planned.push({ plan: task, bot });
       }
       const outTask = planned.find(({ bot }) => outOfRun.has(bot.id));
-      // B6 pilot gate: a research room's first plan is a pilot, bounded by the goal file.
-      const pilotProblem = !planSeen && deps.researchRules?.pilotMaxTasks !== undefined && decision.tasks.length > deps.researchRules.pilotMaxTasks
-        ? `the pilot plan may schedule at most ${deps.researchRules.pilotMaxTasks} task(s) (goal file); run the rest after the pilot holds`
+      const pilotMax = deps.research?.pilotMaxTasks;
+      const pilotProblem = !pilotAccepted && pilotMax !== undefined && decision.tasks.length > pilotMax
+        ? `the pilot plan may schedule at most ${pilotMax} task(s) (goal file); run the rest after the pilot holds`
         : undefined;
-      planSeen = true;
       const problem = pilotProblem
         ?? (outTask
           ? `task ${outTask.plan.id} goes to ${outTask.bot.name}, whose AI ran out of usage in this run`
           : roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf)
-            ?? (deps.vendorOf ? teamVendorProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf, deps.vendorOf) : undefined)
+            ?? (deps.vendorOf ? teamVendorProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf, deps.vendorOf,
+              [...workersSeen].map(([botId, name]) => ({ botId, name }))) : undefined)
           : undefined);
       if (problem) {
         team.planRefusals += 1;
@@ -531,6 +573,8 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
         continue;
       }
       team.planRefusals = 0;
+      pilotAccepted = true;
+      for (const { bot } of planned) if (roleOf(bot.id) === "worker") workersSeen.set(bot.id, bot.name);
       // Same-bot tasks never share a batch: a bot runs one room turn at a time.
       const waves = leadWaves(
         planned.map(({ plan, bot }) => ({ ...leadBallotFromPlan(plan), locks: [...(plan.locks ?? []), `bot:${bot.id}`] })),
@@ -574,6 +618,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
           const lanes = deps.solo ? [] : entries.map((entry) => deps.taskThread?.(entry.bot, entry.plan.instruction));
           const declared = entries.flatMap((entry) => entry.plan.writes ?? []);
           const writesBefore = deps.snapshotWrites && !deps.solo ? await deps.snapshotWrites() : undefined;
+          const batchStarted = Date.now();
           const results = deps.dispatchWave && !deps.solo
             ? await dispatchWaveBatch(deps, entries)
             : lanes.every((lane) => lane)
@@ -629,7 +674,8 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
               return;
             } else {
               const stop = settle(entry.bot, result.replyText,
-                outsideWrites?.length && roleOf(entry.bot.id) === "tester" && result.outcome === "settled" && testerVerdict(result.replyText) === "pass"
+                outsideWrites?.length && result.outcome === "settled" &&
+                  ((roleOf(entry.bot.id) === "tester" && testerVerdict(result.replyText) === "pass") || roleOf(entry.bot.id) === "evaluator")
                   ? outsideWrites
                   : undefined);
               if (stop) {
@@ -638,11 +684,10 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
               }
             }
           }
-          // B3 held-out paths: a member's event log mentioning them is reported after the fact.
-          if (deps.researchRules?.heldOutPaths?.length && deps.scanHeldOut) {
+          if (deps.research?.heldOutPaths?.length && deps.heldOutTouched) {
             for (const { entry, result } of results) {
               if (!result.ran || deps.cancelled()) continue;
-              const mentioned = await deps.scanHeldOut(entry.bot.id);
+              const mentioned = await deps.heldOutTouched(entry.bot.id, batchStarted);
               if (mentioned.length) {
                 deps.note(`${entry.bot.name} touched held-out paths: ${mentioned.slice(0, 5).join(", ")}`);
               }
@@ -679,9 +724,25 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       coordinatorNote = `Your next step: ${decision.instruction}`;
       continue;
     }
+    const vendorProblem = deps.vendorOf
+      ? teamVendorProblem([{ plan: { id: "next", assignee: workerBot.name, instruction: decision.instruction }, botId: workerBot.id, name: workerBot.name }],
+        roleOf, deps.vendorOf, [...workersSeen].map(([botId, name]) => ({ botId, name })))
+      : undefined;
+    if (vendorProblem) {
+      team.planRefusals += 1;
+      if (team.planRefusals >= 3) {
+        deps.finish("blocked", `${coordinator.name}'s plan kept breaking the team roles — ${vendorProblem}.`);
+        return;
+      }
+      coordinatorNote = `Plan refused: ${vendorProblem}. Send a corrected plan.`;
+      continue;
+    }
+    if (roleOf(workerBot.id) === "worker") workersSeen.set(workerBot.id, workerBot.name);
 
     const workerTurn = run.turnCount + 1;
-    const testerBefore = roleOf(workerBot.id) === "tester" && deps.snapshotWrites ? await deps.snapshotWrites() : undefined;
+    const judgeRole = roleOf(workerBot.id) === "tester" || roleOf(workerBot.id) === "evaluator";
+    const judgeBefore = judgeRole && deps.snapshotWrites ? await deps.snapshotWrites() : undefined;
+    const workerStarted = Date.now();
     const workerResult = await stepOnceRetried(deps, workerBot, false, groupGoalWorkerInstructions({
       goal: run.goal,
       coordinatorName: coordinator.name,
@@ -727,16 +788,16 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       return;
     }
     let outsideWrites: string[] | undefined;
-    if (testerBefore && deps.writesOutside) {
-      outsideWrites = (await deps.writesOutside(testerBefore, [])) ?? undefined;
+    if (judgeBefore && deps.writesOutside) {
+      outsideWrites = (await deps.writesOutside(judgeBefore, [])) ?? undefined;
       if (outsideWrites?.length) {
         deps.note(`${workerBot.name} changed files outside its report region: ${outsideWrites.slice(0, 5).join(", ")}${outsideWrites.length > 5 ? ` (+${outsideWrites.length - 5} more)` : ""}`);
       }
     }
     const stop = settle(workerBot, workerResult.replyText,
-      outsideWrites?.length && testerVerdict(workerResult.replyText) === "pass" ? outsideWrites : undefined);
-    if (deps.researchRules?.heldOutPaths?.length && deps.scanHeldOut && workerResult.ran && !deps.cancelled()) {
-      const mentioned = await deps.scanHeldOut(workerBot.id);
+      outsideWrites?.length && (roleOf(workerBot.id) === "evaluator" || testerVerdict(workerResult.replyText) === "pass") ? outsideWrites : undefined);
+    if (deps.research?.heldOutPaths?.length && deps.heldOutTouched && workerResult.ran && !deps.cancelled()) {
+      const mentioned = await deps.heldOutTouched(workerBot.id, workerStarted);
       if (mentioned.length) {
         deps.note(`${workerBot.name} touched held-out paths: ${mentioned.slice(0, 5).join(", ")}`);
       }

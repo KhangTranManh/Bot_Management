@@ -1,8 +1,8 @@
-// Real server: a research room (kind "research") never starts a goal softly (NOTE.md §8.2) — the goal
-// file must validate, be approved (hash locked), and its own verify commands run server-side. The check
-// commands run under the platform shell; POSIX-only.
+// Real server: a research room (kind "research") never starts a goal softly — the goal file must validate,
+// be approved (hash locked), its own verify commands run server-side, and its metric must clear the
+// threshold. The check commands run under the platform shell; POSIX-only.
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +27,10 @@ describe.skipIf(process.platform === "win32")("research room goal gate", () => {
     metric: { file: "results/metrics.json", pointer: "/primary/accuracy", threshold, direction: "at-least" },
     seeds: { count: 3, aggregation: "mean" },
     budget: { wallMinutes: 90 },
-    verify: [{ id: "marker", command: "printf ran > verify-ran.txt" }],
+    verify: [{
+      id: "marker",
+      command: `printf ran > verify-ran.txt && mkdir -p results && printf '%s' '{"primary":{"accuracy":[0.7,0.75,0.8]}}' > results/metrics.json`,
+    }],
   });
 
   beforeAll(async () => {
@@ -140,7 +143,11 @@ describe.skipIf(process.platform === "win32")("research room goal gate", () => {
     sent = await api("POST", `/api/groups/${room.id}/messages`, { text: "Run the sweep", mode: "goal", sendId: "goal_send_research_2" });
     expect(sent.status).toBe(202);
     await expect.poll(async () => (await cardOf(room.id))?.status, { timeout: hostTimeout(30_000) }).toBe("completed");
-    expect(await import("node:fs").then((fs) => fs.existsSync(join(workspace, "verify-ran.txt")))).toBe(true);
+    expect(existsSync(join(workspace, "verify-ran.txt"))).toBe(true);
+    // The ledger is the server's, in its data folder, not in the room folder the bots write to.
+    const ledger = readFileSync(join(home, ".openmausbot", "research", `${room.id}.jsonl`), "utf8");
+    expect(ledger).toContain('"kind":"metric"');
+    expect(existsSync(join(workspace, "ledger.jsonl"))).toBe(false);
 
     // Preregistration lock: the approved file edited on disk blocks the next run.
     writeFileSync(join(workspace, "goal.json"), goalJson(0.99));

@@ -26,9 +26,15 @@ export function teamPlanProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId
 }
 
 /** Why a plan breaks the vendor rule: a Reviewer's or Evaluator's model vendor must differ from every
- * Worker's in the same plan; "unknown" is never treated as different. */
-export function teamVendorProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId: string; name: string }>, roleOf: (botId: string) => TeamRole | undefined, vendorOf: (botId: string) => string | undefined): string | undefined {
-  const workers = tasks.filter(({ botId }) => roleOf(botId) === "worker");
+ * Worker's in the plan or earlier in the run; "unknown" is never treated as different. */
+export function teamVendorProblem(
+  tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId: string; name: string }>,
+  roleOf: (botId: string) => TeamRole | undefined,
+  vendorOf: (botId: string) => string | undefined,
+  earlierWorkers: ReadonlyArray<{ botId: string; name: string }> = [],
+): string | undefined {
+  const planned = tasks.filter(({ botId }) => roleOf(botId) === "worker");
+  const workers = [...planned, ...earlierWorkers.filter(({ botId }) => !planned.some((task) => task.botId === botId))];
   for (const { plan, botId, name } of tasks) {
     const role = roleOf(botId);
     if (role !== "reviewer" && role !== "evaluator") continue;

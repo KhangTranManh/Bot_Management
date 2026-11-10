@@ -5,7 +5,7 @@ import { reserveGmailDrafts } from "./gmail-draft-policy.ts";
 import { createGmailDrafts } from "./host/gmail-drafts.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { rm as removeDirectory } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -235,9 +235,9 @@ import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
 import { writesOutside, writesSnapshot } from "./writes-audit.ts";
 import { runVerifyCommand } from "./verify-run.ts";
-import type { VerifyCommand } from "../shared/wire.ts";
 import { modelVendor } from "./model-vendor.ts";
-import { appendResearchLedger, loadResearchGoal, type ResearchGoalFile } from "./research-goal.ts";
+import { loadResearchGoal } from "./research-goal.ts";
+import { prepareResearchRun } from "./research-run.ts";
 import { roomNow } from "./room-now.ts";
 import { looksLikeProgressQuestion } from "../shared/auto-goal.ts";
 import type { MemberNow } from "../shared/room-now.ts";
@@ -3095,14 +3095,21 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   return mode;
 };
 
+/** A research room always runs under the role ceiling, whatever OMB_ROLE_CEILING says. */
+function roleCeilingFor(threadId: string, node?: { groupId?: string }): boolean {
+  if (roleCeilingEnabled()) return true;
+  const group = (node?.groupId ? store.group(node.groupId) : undefined) ?? store.groupByThread(threadId);
+  return group?.kind === "research";
+}
+
 function sourceApprovalMode(botId: string, threadId: string): ApprovalMode {
   const owner = connectorThread(botId, threadId);
   if (!owner) return "ask";
   const bot = store.projectBotForTask(botId, threadId) ?? owner.bot;
   const mode = approvalModeForTurn(bot, false, threadId);
-  if (!roleCeilingEnabled()) return mode;
   // A coordinated turn never sources Full access above the level its node records.
   const node = coordinator.runningIn(threadId).find((candidate) => candidate.botId === botId);
+  if (!roleCeilingFor(threadId, node)) return mode;
   return approvalModeUnderCeiling(mode, node?.level, registry.cliTarget(bot.modelSelection.instanceId)?.driverKind);
 }
 
@@ -3130,7 +3137,7 @@ const liveApprovalMode = createLiveApprovalMode({ store, turnLevel: approvalMode
 function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: GroupTurnOrchestration): ApprovalMode {
   const handoff = orchestration?.roomHandoffId ? coordinator.node(orchestration.roomHandoffId) : undefined;
   const mode = delegatedLevel.roomTurn(bot, threadId, handoff?.parentId ? coordinator.node(handoff.parentId) : undefined);
-  if (!roleCeilingEnabled()) return mode;
+  if (!roleCeilingFor(threadId, handoff)) return mode;
   // The Chief's lift is computed first; the node's own recorded level only lowers it further.
   return approvalModeUnderCeiling(mode, handoff?.level, registry.cliTarget(bot.modelSelection.instanceId)?.driverKind);
 }
@@ -3749,7 +3756,7 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if ((patch.kind ?? existing.kind) !== "research") throw Object.assign(new Error("only a research room approves a goal file"), { status: 409 });
     const goalFile = (patch.goalFile as string | undefined) ?? existing.goalFile;
     if (!goalFile) throw Object.assign(new Error("set goalFile on the room before approving it"), { status: 400 });
-    const folder = existing.pinnedCwd ?? existing.cwd;
+    const folder = store.pinGroupCwd(groupId) ?? existing.cwd;
     if (!folder) throw Object.assign(new Error("the research room needs a working folder before its goal file can be approved"), { status: 409 });
     const loaded = loadResearchGoal(join(folder, goalFile));
     if (!loaded.ok) throw Object.assign(new Error(loaded.error), { status: 400 });
@@ -6584,8 +6591,8 @@ bus.subscribe((event: RuntimeEvent) => {
       const guestDriven = cloudGuestDriven(event.threadId) || botApiThread(event.threadId);
       const ownApprovalMode = (who: BotRecord) => {
         const mode = liveApprovalMode(who, event.threadId, isInternalTurn(event.threadId));
-        if (!roleCeilingEnabled()) return mode;
         const node = coordinator.runningIn(event.threadId).find((candidate) => candidate.botId === who.id);
+        if (!roleCeilingFor(event.threadId, node)) return mode;
         return approvalModeUnderCeiling(mode, node?.level, registry.cliTarget(who.modelSelection.instanceId)?.driverKind);
       };
       const effectiveApprovalMode = !asker || guestDriven ? "ask"
@@ -8459,7 +8466,7 @@ async function beginTurn(
       }
       // A coordinated turn never runs above the level its node records; the Chief's lift is upstream of this cap.
       const driverKind = registry.cliTarget(bot.modelSelection.instanceId)?.driverKind;
-      const coordinationCeiling = roleCeilingEnabled() ? coordinationNode?.level : undefined;
+      const coordinationCeiling = roleCeilingFor(threadId, coordinationNode) ? coordinationNode?.level : undefined;
       const turnApproval = approvalModeUnderCeiling(approvalModeForTurn(bot, commsDepth > 0, threadId), coordinationCeiling, driverKind);
       // The tool bridge is decided here: the folder the turn is launched in is known, and the prompt is not built yet.
       applyAgentsBridge(threadId, integrations, cfg, bot, turnEngine(instance, providerConfigs(), registry.lastSnapshot(instance.instanceId), cwd));
@@ -10994,39 +11001,25 @@ async function runGroupGoalOperation(args: {
   if (!run) return;
   const skillAuthoringClaim = { claimed: false };
   const room = store.group(args.groupId);
-  // A research room (NOTE.md §8.2) never starts a goal softly: the goal file must exist, validate against
-  // the schema, and be approved (hash locked); a locked file that changed on disk blocks the run.
-  let researchVerify: VerifyCommand[] | undefined;
-  let budgetWallMinutes: number | undefined;
-  let researchGoalLoaded: ResearchGoalFile | undefined;
-  let researchLedgerPath: string | undefined;
-  if (room?.kind === "research") {
-    const folder = store.pinGroupCwd(args.groupId, args.threadId) ?? room.cwd ?? undefined;
-    if (!folder) {
-      finishGroupGoalRun(args.groupId, args.operation, "needs-input", "This research room needs a working folder (set cwd) before its goal file can be checked.");
-      return;
-    }
-    const loaded = room.goalFile ? loadResearchGoal(join(folder, room.goalFile)) : { ok: false as const, error: "this research room has no goal file set (goalFile)" };
-    if (!loaded.ok) {
-      finishGroupGoalRun(args.groupId, args.operation, "needs-input", `${loaded.error}. Set goalFile on the room, then approve it with PATCH { "researchGoalApprove": true }.`);
-      return;
-    }
-    if (room.goalFileHash && room.goalFileHash !== loaded.hash) {
-      finishGroupGoalRun(args.groupId, args.operation, "blocked", "The research goal file changed after it was approved (preregistration lock) — restore the approved version or re-approve the new one.");
-      return;
-    }
-    if (!room.goalFileHash) {
-      finishGroupGoalRun(args.groupId, args.operation, "needs-input", `Approve the research goal file before any run (sha256 ${loaded.hash.slice(0, 16)}…): PATCH the room with { "researchGoalApprove": true }.`);
-      return;
-    }
-    researchVerify = loaded.goal.verify;
-    budgetWallMinutes = loaded.goal.budget.wallMinutes;
-    researchGoalLoaded = loaded.goal;
-    researchLedgerPath = join(folder, loaded.goal.ledgerFile ?? "ledger.jsonl");
-    appendResearchLedger(researchLedgerPath, {
-      kind: "run-start", goal: loaded.goal.name, hash: loaded.hash, runId: run.runId,
-    });
+  const research = room?.kind === "research" ? prepareResearchRun({
+    groupId: args.groupId,
+    goalFile: room.goalFile,
+    goalFileHash: room.goalFileHash,
+    folder: store.pinGroupCwd(args.groupId, args.threadId) ?? room.cwd ?? undefined,
+    runId: run.runId,
+    dataDir: DATA_DIR,
+    eventsDir: EVENTS_DIR,
+    members: args.members,
+    memberThreads: (botId) => [args.threadId, ...store.tasks(botId)
+      .filter((task) => task.openedBy?.kind === "work" && task.openedBy.roomLane && task.openedBy.threadId === args.threadId)
+      .map((task) => task.threadId)],
+    instanceOf: (botId) => store.bot(botId)?.modelSelection.instanceId,
+  }) : undefined;
+  if (research && !research.ok) {
+    finishGroupGoalRun(args.groupId, args.operation, research.status, research.detail);
+    return;
   }
+  const wiring = research?.wiring;
   await runGoalRun({
     run,
     coordinator: args.coordinator,
@@ -11056,39 +11049,13 @@ async function runGroupGoalOperation(args: {
       const after = await writesSnapshot(cwd);
       return after ? writesOutside(before, after, declared) : undefined;
     },
-    verify: researchVerify ?? (room && !room.dm && room.verify?.length ? room.verify : undefined),
-    budgetWallMinutes,
-    ...(researchGoalLoaded ? {
-      researchRules: {
-        heldOutPaths: researchGoalLoaded.heldOutPaths,
-        pilotMaxTasks: researchGoalLoaded.pilot?.maxTasks,
-        handoffExpectsFiles: researchGoalLoaded.handoff?.expectsFiles,
-      },
-      scanHeldOut: async (botId: string) => {
-        const folder = store.pinGroupCwd(args.groupId, args.threadId) ?? room?.cwd ?? undefined;
-        if (!folder || !researchGoalLoaded?.heldOutPaths?.length) return [];
-        const paths = researchGoalLoaded.heldOutPaths;
-        const threads = [args.threadId, ...store.tasks(botId)
-          .filter((task) => task.openedBy?.kind === "work" && task.openedBy.roomLane && task.openedBy.threadId === args.threadId)
-          .map((task) => task.threadId)];
-        const mentioned = new Set<string>();
-        for (const threadId of threads) {
-          let raw = "";
-          try {
-            raw = readFileSync(join(EVENTS_DIR, `${threadId}.ndjson`), "utf8");
-          } catch {
-            continue;
-          }
-          for (const path of paths) if (raw.includes(path)) mentioned.add(path);
-        }
-        void folder;
-        return [...mentioned];
-      },
-      missingHandoffFiles: async () => {
-        const folder = store.pinGroupCwd(args.groupId, args.threadId) ?? room?.cwd ?? undefined;
-        if (!folder) return researchGoalLoaded.handoff?.expectsFiles ?? [];
-        return (researchGoalLoaded.handoff?.expectsFiles ?? []).filter((file) => !existsSync(join(folder, file)));
-      },
+    verify: wiring?.verify ?? (room && !room.dm && room.verify?.length ? room.verify : undefined),
+    ...(wiring ? {
+      research: wiring.research,
+      missingHandoffFiles: wiring.missingHandoffFiles,
+      heldOutTouched: wiring.heldOutTouched,
+      readMetric: wiring.readMetric,
+      recordMetric: wiring.recordMetric,
     } : {}),
     ...(room && !room.dm && room.verify?.length && !store.pinGroupCwd(args.groupId, args.threadId)
       ? { verifyRefusal: "This room has completion checks but no working folder to run them in. Set the room's folder, then send the goal again." }
@@ -11096,7 +11063,7 @@ async function runGroupGoalOperation(args: {
     runVerify: async (command) => {
       const roomCwd = store.pinGroupCwd(args.groupId, args.threadId);
       const result = await (roomCwd ? runVerifyCommand(command, roomCwd) : { id: command.id, exitCode: null, output: "the room has no working folder" });
-      if (researchLedgerPath) appendResearchLedger(researchLedgerPath, { kind: "verify", result });
+      wiring?.recordVerify(result);
       return result;
     },
     ...(room?.kind === "research" ? {
@@ -11106,7 +11073,7 @@ async function runGroupGoalOperation(args: {
       },
     } : {}),
     finish: (status, detail, text) => {
-      if (researchLedgerPath) appendResearchLedger(researchLedgerPath, { kind: "run-end", status, detail: detail.slice(0, 200) });
+      wiring?.recordEnd(status, detail);
       finishGroupGoalRun(args.groupId, args.operation, status, detail, text);
     },
     progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),

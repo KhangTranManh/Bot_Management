@@ -9921,6 +9921,7 @@
   "room.panel.role.worker": "Executor",
   "room.panel.role.tester": "Testador",
   "room.panel.role.reviewer": "Revisor",
+  "room.panel.role.evaluator": "Avaliador",
   "room.panel.autoGoal": "Executar pedidos de trabalho como metas",
   "room.panel.autoGoalHint": "Um pedido como \"crie…\" ou \"corrija…\" inicia uma meta; comece com /chat para só conversar",
   "room.panel.now.queued": "Aguardando",
@@ -9934,6 +9935,7 @@
   "room.panel.status.waiting": "Aguardando você",
   "room.panel.status.working": "Trabalhando",
   "composer.command.chatDesc": "Enviar como conversa comum",
+  "composer.command.researchDesc": "Executar este pedido como um objetivo nesta sala de pesquisa (o portão do arquivo de objetivo se aplica).",
   "goal.panel.activity": "Atividade da meta",
   "goal.panel.empty": "Nada aconteceu desde que a meta começou.",
   "goal.panel.open": "Abrir detalhes da meta"
