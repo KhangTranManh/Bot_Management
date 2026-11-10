@@ -1391,6 +1391,10 @@ describe("goal-driven channel runs", () => {
     await expect.poll(async () => (await roomState())?.messages.some((message: { kind: string }) => message.kind === "goal.run"), { timeout: hostTimeout(15_000) }).toBe(true);
     await expect.poll(async () => (await roomState())?.working, { timeout: hostTimeout(15_000) }).toBe(true);
 
+    await expect.poll(async () => (await api("GET", `/api/groups/${room.id}/now`)).body.members
+      .find((row: { botId: string }) => row.botId === held.id), { timeout: hostTimeout(15_000) })
+      .toMatchObject({ state: "running", task: expect.stringContaining("Draft and report") });
+    expect((await api("GET", `/api/groups/${room.id}/now?threadId=not-a-thread`)).status).toBe(404);
     const asked = await api("POST", `/api/groups/${room.id}/messages`, { text: "@Side free how is it going?", sendId: "chat_send_side_1234567890" });
     expect(asked.status).toBe(202);
     expect(asked.body.queued).not.toBe(true);

@@ -46,4 +46,19 @@ describe("RoomStatus roles", () => {
     expect(document.querySelector("[data-role-select]")).toBeNull();
     expect(document.querySelector('[data-status-row="b"] [data-role="reviewer"]')).not.toBeNull();
   });
+
+  it("shows each member's job now, its newest step and how long it has run, and counts a running job as working", () => {
+    const now = [
+      { botId: "a", state: "running" as const, task: "Build the UI", threadId: "lane-a", since: Date.now() - 40_000, step: "Edit: ui.tsx", stepOk: true },
+      { botId: "b", state: "queued" as const, task: "Test it", threadId: "lane-b" },
+    ];
+    flushSync(() => root.render(createElement(RoomStatus, { group: { messages: [] }, members, now })));
+    const a = document.querySelector('[data-now-row="a"]')!;
+    expect(a.textContent).toContain("Build the UI");
+    expect(a.textContent).toMatch(/4\d s/);
+    expect(a.textContent).toContain("Edit: ui.tsx");
+    expect(document.querySelector('[data-status-row="a"]')!.getAttribute("data-presence")).toBe("working");
+    expect(document.querySelector('[data-now-row="b"]')!.getAttribute("data-now-state")).toBe("queued");
+    expect(document.querySelector('[data-status-row="b"]')!.getAttribute("data-presence")).toBe("idle");
+  });
 });

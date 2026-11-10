@@ -229,6 +229,7 @@
   "room.panel.role.reviewer": "Reviewer",
   "room.panel.autoGoal": "Tự chạy yêu cầu làm việc như goal",
   "room.panel.autoGoalHint": "Tin như \"làm…\", \"sửa…\" sẽ chạy goal; gõ /chat ở đầu để chỉ trò chuyện",
+  "room.panel.now.queued": "Đang chờ",
   "room.panel.goalWaves": "Goal chạy song song",
   "room.panel.goalWavesHint": "Goal chia việc cho nhiều bot làm cùng lúc",
   "composer.command.chatDesc": "Gửi như chat thường",

@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { useStore, type Bot, type Group, type Message } from "@/state/store";
 import { roundButtonCls } from "./bot-panel/rows";
 import { RoomStatus } from "./room-panel/RoomStatus";
+import { useRoomNow } from "@/lib/room-now";
 
 const FEED_LIMIT = 30;
 const LINE_LIMIT = 160;
@@ -39,6 +40,7 @@ export function GoalRunPanel({ group, cardId, onClose }: { group: Group; cardId:
     [group.memberIds, state.bots],
   );
   const feed = useMemo(() => feedOf(group.messages, cardId), [group.messages, cardId]);
+  const now = useRoomNow(group.id, group.threadId, run?.status === "working");
 
   useEffect(() => {
     ref.current?.focus();
@@ -73,7 +75,7 @@ export function GoalRunPanel({ group, cardId, onClose }: { group: Group; cardId:
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-7">
         <h2 id="goal-run-panel-title" dir="auto" className="text-[16px] font-semibold text-ink">{line(run.goal) || t("routines.goal.groupGoal")}</h2>
         {run.detail && <p dir="auto" className="mt-1 text-[13px] leading-relaxed text-ink-secondary">{line(run.detail)}</p>}
-        <RoomStatus group={group} members={members} />
+        <RoomStatus group={group} members={members} now={now} />
         <h3 className="mt-5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("goal.panel.activity")}</h3>
         {feed.length === 0 ? (
           <p className="mt-2 text-[13px] text-ink-tertiary">{t("goal.panel.empty")}</p>

@@ -18,6 +18,7 @@ import { buttonCls, Card, ColRow, NavRow, PageHeader, roundButtonCls, rowCls, Ro
 import { sidePanelCls } from "../bot-panel/side-panel";
 import { ResponderPage } from "./ResponderPage";
 import { RoomStatus } from "./RoomStatus";
+import { useRoomNow } from "@/lib/room-now";
 import { autoGoalOn } from "../../../shared/auto-goal";
 
 /** Matches the server: goals plan parallel waves from three members. */
@@ -132,6 +133,7 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
     [group.memberIds, state.bots],
   );
   const folder = roomWorkingFolder(group);
+  const now = useRoomNow(group.id, group.threadId, !group.dm);
   const closeMembers = useCallback(() => setMembersOpen(false), []);
 
   const openPage = (next: RoomPage) => {
@@ -196,7 +198,7 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
           {page === null ? (
             <>
               <RoomHero group={group} members={members} />
-              <RoomStatus group={group} members={members} onRoles={(roles) => dispatch({ type: "patchGroup", groupId: group.id, patch: { roles } })} />
+              <RoomStatus group={group} members={members} now={now} onRoles={(roles) => dispatch({ type: "patchGroup", groupId: group.id, patch: { roles } })} />
               <Card>
                 <NavRow
                   data-panel-page="responder"

@@ -3,6 +3,8 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import type { Bot, Group } from "@/state/store";
 import { TEAM_ROLES, type TeamRole } from "../../../shared/team-roles";
+import type { MemberNow } from "../../../shared/room-now";
+import { ranFor } from "@/lib/room-now";
 import { BotAvatar } from "../Avatar";
 import { Card, rowCls } from "../bot-panel/rows";
 
@@ -49,23 +51,35 @@ export function presenceOf(bot: Pick<Bot, "busy" | "activity">, speaking: boolea
 
 /** One row per member: its team role, who is working, waiting on the person, idle or unreachable, and on which model.
  * `onRoles` makes each role a choice. */
-export function RoomStatus({ group, members, onRoles }: {
+export function RoomStatus({ group, members, onRoles, now = [] }: {
   group: Pick<Group, "busyBotId" | "messages" | "roles">;
   members: Bot[];
   onRoles?: (roles: Record<string, TeamRole>) => void;
+  /** Each member's job right now; a running one counts as working. */
+  now?: readonly MemberNow[];
 }) {
   const goal = [...group.messages].reverse().find((message) => message.kind === "goal.run")?.goalRun;
   const liveGoal = goal && goal.status === "working" ? goal : undefined;
   return (
     <Card label={t("room.panel.status")} anchor="status">
       {members.map((member) => {
-        const presence = presenceOf(member, group.busyBotId === member.id, liveGoal?.coordinatorBotId === member.id);
+        const job = now.find((row) => row.botId === member.id);
+        const presence = presenceOf(member, group.busyBotId === member.id || job?.state === "running", liveGoal?.coordinatorBotId === member.id);
         return (
           <div key={member.id} data-status-row={member.id} data-presence={presence} className={cn(rowCls, "gap-2.5")}>
             <BotAvatar bot={member} state={presence === "working" ? "working" : "happy"} size={28} animated={false} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] font-medium text-ink">{member.name}</div>
               <div className="truncate text-[12px] text-ink-tertiary">{member.modelSelection.model}</div>
+              {job && (
+                <div data-now-row={member.id} data-now-state={job.state} className="mt-0.5 text-[12px] leading-snug">
+                  <div dir="auto" className="line-clamp-2 text-ink-secondary">
+                    {job.state === "queued" ? `${t("room.panel.now.queued")} · ` : ""}{job.task}
+                    {job.since ? <span className="text-ink-tertiary"> · {ranFor(job.since)}</span> : null}
+                  </div>
+                  {job.step && <div dir="auto" className={cn("truncate", job.stepOk === false ? "text-danger" : "text-ink-tertiary")}>↳ {job.step}</div>}
+                </div>
+              )}
             </div>
             {onRoles ? (
               <select

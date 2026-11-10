@@ -233,6 +233,8 @@ import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
+import { roomNow } from "./room-now.ts";
+import type { MemberNow } from "../shared/room-now.ts";
 import { isTeamRole, type TeamRole } from "../shared/team-roles.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
 
@@ -10955,6 +10957,21 @@ type StartGroupTurnOptions = {
 
 const SIDE_REPLY_MAX_TARGETS = 3;
 
+function roomNowFor(group: GroupRecord, threadId: string): MemberNow[] {
+  const speaker = groupSpeakers.get(threadId);
+  const asked = speaker ? [...store.messagesTail(threadId, 30).messages].reverse().find((message) => message.role === "user" && message.text)?.text : undefined;
+  return roomNow({
+    groupId: group.id, roomThreadId: threadId, memberIds: group.memberIds, nodes: coordinator.active(), laneRoomThread,
+    ...(speaker ? { speaker: { botId: speaker.botId, ...(speaker.since ? { since: speaker.since } : {}), task: asked ?? "" } } : {}),
+    latest: (lane) => {
+      const last = store.messagesTail(lane, 1).messages.at(-1);
+      if (!last || last.role !== "bot") return undefined;
+      if (last.kind === "activity") return last.tool ? { text: last.tool.label ?? last.tool.name, ...(last.tool.ok !== undefined ? { ok: last.tool.ok } : {}) } : undefined;
+      return last.text ? { text: last.text } : undefined;
+    },
+  });
+}
+
 /** A room's roles as the person set them: member ids only, known roles only, at most one lead; none means undefined. */
 function checkedTeamRoles(value: unknown, memberIds: readonly string[]): Record<string, TeamRole> | undefined {
   const refuse = (message: string) => Object.assign(new Error(message), { status: 400 });
@@ -10999,39 +11016,55 @@ function startRoomSideReply(
   const members = room.memberIds.map((id) => store.bot(id)).filter((bot): bot is BotRecord => Boolean(bot));
   const targets = roomResponders(text, members, { kind: "mentions" }, options.mentions).filter((bot) => !roomHeld(room, bot.id));
   if (targets.length === 0 || targets.length > SIDE_REPLY_MAX_TARGETS) return undefined;
-  // The request root must not be a bot it hands work to: a runtime request cannot be assigned back to an ancestor.
-  // It must also owe nobody an answer, or the lane refuses as a request cycle.
-  const lead = members.find((member) => !targets.some((target) => target.id === member.id) && !roomHeld(room, member.id)
-    && !member.busy && !coordinator.active().some((node) => node.botId === member.id && !ENDED.has(node.status)));
-  if (!lead) return undefined;
+  // The request is rooted on another member, as a runtime request cannot be handed back to an ancestor; members with
+  // nothing open go first, and one the runtime refuses (it owes the target an answer) gives way to the next.
+  const openWork = (member: BotRecord) => member.busy || coordinator.active().some((node) => node.botId === member.id && !ENDED.has(node.status));
+  const anchors = members.filter((member) => !targets.some((target) => target.id === member.id) && !roomHeld(room, member.id))
+    .sort((a, b) => Number(openWork(a)) - Number(openWork(b)));
+  if (anchors.length === 0) return undefined;
   const message = store.appendMessage(threadId, {
     role: "user", kind: "text", text, replyToId: replyTo?.id, reaction: replyTo?.reactedWith, sendId,
     channelMode: "chat", via: options.via, sender: options.sender,
   });
   if (options.trigger) turnTriggers.set(threadId, options.trigger);
-  const sender = { id: lead.id, name: lead.name };
-  const rootId = randomUUID();
-  coordinator.beginTurn({
-    id: rootId,
-    address: { groupId, threadId, botId: lead.id },
-    brief: `Message from the person while the room works: ${text}`,
-    level: roomTurnApprovalMode(lead, threadId),
-    origin: OUTSIDE,
-    reply: "poll",
-  });
+  const roots = new Map<string, string>();
+  const rootOn = (anchor: BotRecord) => {
+    const known = roots.get(anchor.id);
+    if (known) return known;
+    const rootId = randomUUID();
+    coordinator.beginTurn({
+      id: rootId,
+      address: { groupId, threadId, botId: anchor.id },
+      brief: `Message from the person while the room works: ${text}`,
+      level: roomTurnApprovalMode(anchor, threadId),
+      origin: OUTSIDE,
+      reply: "poll",
+    });
+    roots.set(anchor.id, rootId);
+    return rootId;
+  };
   const brief = `The person wrote this while the team keeps working. Answer them briefly and stop: read and explain only, change no files and start no new work.\n\n${text}`;
   for (const bot of targets) {
-    try {
-      const lane = roomJobs.openLane(room, threadId, bot.id, sender, text);
-      coordinator.enqueue({ groupId, threadId, botId: lead.id }, rootId, rootId, { botId: bot.id, threadId: lane.threadId }, brief, { mode: "consult", thread: "new" });
-    } catch (error) {
+    let refusal: unknown;
+    const taken = anchors.some((anchor) => {
+      try {
+        const rootId = rootOn(anchor);
+        const lane = roomJobs.openLane(room, threadId, bot.id, { id: anchor.id, name: anchor.name }, text);
+        coordinator.enqueue({ groupId, threadId, botId: anchor.id }, rootId, rootId, { botId: bot.id, threadId: lane.threadId }, brief, { mode: "consult", thread: "new" });
+        return true;
+      } catch (error) {
+        refusal = error;
+        return false;
+      }
+    });
+    if (!taken) {
       store.appendMessage(threadId, {
         role: "bot", kind: "activity",
-        tool: { name: serverLine(threadLanguage(threadId), "server.rooms.sideReplyFailed", { bot: bot.name, reason: error instanceof Error ? error.message : String(error) }), ok: false },
+        tool: { name: serverLine(threadLanguage(threadId), "server.rooms.sideReplyFailed", { bot: bot.name, reason: refusal instanceof Error ? refusal.message : String(refusal) }), ok: false },
       });
     }
   }
-  coordinator.endTurn(rootId, { ok: true, text: "side replies dispatched" });
+  for (const rootId of roots.values()) coordinator.endTurn(rootId, { ok: true, text: "side replies dispatched" });
   return message;
 }
 
@@ -12557,7 +12590,7 @@ ROUTES.push(createChannelRoutes({
   messagePage,
   resolveReplyTarget,
   runningTurnInstance,
-  startGroupTurn, startRoomSideReply, engineSteersImages,
+  startGroupTurn, startRoomSideReply, roomNowFor, engineSteersImages,
   applyRoomHoldsFromMessage,
   cancelGroupTurnOperations,
   drainQueuedChannelSends,

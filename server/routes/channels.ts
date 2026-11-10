@@ -15,6 +15,7 @@ import { DATA_DIR, type AppConfig } from "../config.ts";
 import type { ProviderInstance, SteerOutcome } from "../contracts.ts";
 import { cancelledChatFollowup } from "../message-db.ts";
 import { autoGoalOn, looksLikeWorkRequest } from "../../shared/auto-goal.ts";
+import type { MemberNow } from "../../shared/room-now.ts";
 import { messageTextRefusal } from "../message-text.ts";
 import type { PhoneSecretSubmissionRegistry } from "../phone-secret.ts";
 import { promptWithReply, type PersonName } from "../replies.ts";
@@ -99,6 +100,8 @@ export interface ChannelRouteDeps {
     options: { via?: "api"; sender?: ResolvedSender; trigger?: UsageTrigger; mentions?: string[] },
   ): Message | undefined;
   applyRoomHoldsFromMessage(groupId: string, text: string, mentions?: readonly string[]): void;
+  /** What each member is doing right now for this room thread. */
+  roomNowFor(group: GroupRecord, threadId: string): MemberNow[];
   cancelGroupTurnOperations(groupId: string, threadId: string): void;
   drainQueuedChannelSends(): void;
   clearTurnDigestState(threadId: string): void;
@@ -115,7 +118,7 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
     store, cfg, broadcast, notificationListed, actorKey, threadStarters, phoneSecretSubmissions, sendSequencer, roomMemberContexts, skillReview,
     groupSpeakers, groupTurnOperations, lastReply, cloudThreadRefusal, messageSender, usageTriggerFor, publicGroupState,
     groupWithThread, updateChannel, groupIsWorking, groupThreadIsWorking, readCursor, pageSize, messagePage,
-    resolveReplyTarget, runningTurnInstance, startGroupTurn, startRoomSideReply, engineSteersImages, applyRoomHoldsFromMessage, cancelGroupTurnOperations,
+    resolveReplyTarget, runningTurnInstance, startGroupTurn, startRoomSideReply, engineSteersImages, applyRoomHoldsFromMessage, roomNowFor, cancelGroupTurnOperations,
     drainQueuedChannelSends, clearTurnDigestState, closeOpenApprovals, revokeInternalCapabilitiesForThread,
     stagedSkillCleanupsForThread, rejectDeletedThreadSkillStages,
   } = deps;
@@ -320,6 +323,15 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
       store.deleteGroup(group.id);
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       return json(res, 200, { ok: true });
+    }
+    m = path.match(/^\/api\/groups\/([\w-]+)\/now$/);
+    if (m && method === "GET") {
+      const group = store.group(m[1]);
+      if (!group) return json(res, 404, { error: "no such group" });
+      const threadId = url.searchParams.get("threadId") ?? group.threadId;
+      const owns = group.dm ? group.threadId === threadId : Boolean(store.groupTaskByThread(group.id, threadId));
+      if (!owns) return json(res, 404, { error: "no such thread in channel" });
+      return json(res, 200, { members: roomNowFor(group, threadId) });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)\/messages$/);
     if (m && method === "POST") {

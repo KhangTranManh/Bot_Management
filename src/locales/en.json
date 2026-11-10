@@ -4940,6 +4940,7 @@
   "room.panel.role.reviewer": "Reviewer",
   "room.panel.autoGoal": "Run work requests as goals",
   "room.panel.autoGoalHint": "A request like \"build…\" or \"fix…\" starts a goal; start with /chat to just talk",
+  "room.panel.now.queued": "Waiting",
   "room.panel.goalWaves": "Parallel goal work",
   "room.panel.goalWavesHint": "Goals split work across teammates at the same time",
   "room.panel.status": "Team status",
