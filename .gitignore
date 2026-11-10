@@ -47,4 +47,4 @@ test-server-data/
 
 # Session-local ZCode files and stray preview artifacts
 .zcode/
-office-preview.html
+/office-preview.html

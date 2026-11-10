@@ -1,0 +1,26 @@
+<!-- @dsCard group="Scene" height=170 -->
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<style>body{margin:0;background:var(--void);color:var(--fg);font-family:var(--font-body);font-size:14px;line-height:1.5}.wrap{padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}</style>
+<svg viewBox="-260 -70 520 120" style="display:block;width:100%">
+<defs>
+  <filter id="no-soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter>
+  <filter id="no-bloom" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <linearGradient id="no-beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--magenta)"/><stop offset="1" style="stop-color:var(--cyan)"/></linearGradient>
+</defs>
+<g id="root"></g>
+</svg>
+<script>
+const S = { running: "đang xử lý", queued: "xếp hàng", waiting: "chờ bạn", out: "hết lượt", idle: "rảnh" };
+const bots = [["Maple", "Lead", "running", -200], ["Fern", "Tester", "queued", -100], ["Orion", "Lead", "waiting", 0], ["Sol", "Worker", "out", 100], ["Wren", "", "idle", 200]];
+document.getElementById("root").innerHTML = bots.map(([n, r, s, x], i) => {
+  const y = 20, w = Math.max(n.length * 6.6 + (r ? r.length * 5.8 + 10 : 0) + 18, 54);
+  const role = r ? `<tspan class="no-pill-role" dx="6">${r}</tspan>` : "";
+  const tag = s !== "idle" ? `<text class="no-state-tag" x="${x}" y="${y - 47}" text-anchor="middle">${S[s]}</text>` : "";
+  return `<g class="no-bot is-${s}${i === 0 ? " selected" : ""}" tabindex="0" role="button" aria-label="${n}, ${r || "chưa có vai"}, ${S[s]}">
+    <circle class="halo${s === "running" ? " no-pulse" : ""}" cx="${x}" cy="${y}" r="16"/><circle class="core" cx="${x}" cy="${y}" r="10"/>
+    <circle class="ring" cx="${x}" cy="${y}" r="15"/><text class="ini" x="${x}" y="${y}">${n[0]}</text>
+    <rect class="no-pill" x="${x - w / 2}" y="${y - 38}" width="${w}" height="18" rx="2"/>
+    <text x="${x - w / 2 + 9}" y="${y - 25.5}"><tspan class="no-pill-name">${n}</tspan>${role}</text>${tag}</g>`;
+}).join("");
+</script>

@@ -1,0 +1,52 @@
+<!-- @dsCard height=300 -->
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<style>
+body { margin: 0; background: var(--void); }
+.cover { position: relative; width: 960px; height: 300px; overflow: hidden; background: var(--void); }
+.cover svg { position: absolute; inset: 0; }
+.b-magenta { fill: var(--magenta); }
+.b-cyan { fill: var(--cyan); }
+.b-acid { fill: var(--acid); }
+.b-violet { fill: var(--violet); }
+.b-panel { fill: var(--panel); }
+.tile { fill: none; stroke: var(--cyan); stroke-width: 1; opacity: 0.7; }
+.tile.on { fill: var(--floor); stroke: var(--magenta); opacity: 1; }
+.name { position: absolute; left: 40px; bottom: 56px; max-width: 440px; margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 104px; line-height: 0.92; letter-spacing: 0.02em; color: var(--fg); }
+.tagline { position: absolute; left: 42px; bottom: 26px; max-width: 440px; margin: 0; font-family: var(--font-body); font-size: 13px; color: var(--muted); }
+</style>
+<div class="cover">
+  <svg viewBox="0 0 960 300" width="960" height="300" aria-hidden="true">
+    <!--
+      blocks: magenta 112×300 slab (notch-md cuts), cyan 208×112, acid 112×112, violet 56×56, panel 208×176 — all on 8px steps.
+      arrangement: one tall magenta slab bleeding off top and bottom with satellites stacked right of it, HUD-style cut corners.
+      pattern: isometric platform outlines (the room silhouette, iso-unit 26) laid over the panel block — the office floor is this system's own shape.
+      scales: space-2 (8) gaps, notch-md 12 corner cuts, iso-unit 26 for the tiles, radius-none everywhere.
+    -->
+    <polygon class="b-magenta" points="520,0 632,0 632,288 620,300 520,300"/>
+    <polygon class="b-cyan" points="640,0 836,0 848,12 848,112 640,112"/>
+    <polygon class="b-acid" points="856,0 960,0 960,112 868,112 856,100"/>
+    <polygon class="b-panel" points="640,120 848,120 848,284 832,300 640,300"/>
+    <polygon class="b-violet" points="856,120 912,120 912,164 900,176 856,176"/>
+    <g id="tiles"></g>
+  </svg>
+  <h1 class="name">Neon<br>Office</h1>
+  <p class="tagline">Văn phòng của đội bot, nhìn trên một màn hình.</p>
+</div>
+<script>
+const K = 26, C = 0.866;
+const rhombus = (cx, cy) => {
+  const dx = K * C, dy = K * 0.5;
+  return `${cx},${cy - dy} ${cx + dx},${cy} ${cx},${cy + dy} ${cx - dx},${cy}`;
+};
+const dx = K * C, dy = K * 0.5, tiles = [];
+for (let row = 0; row < 10; row++) {
+  for (let col = 0; col < 4; col++) {
+    const cx = 667 + col * 2 * dx + (row % 2) * dx;
+    const cy = 146 + row * dy;
+    if (cx + dx > 846 || cy + dy > 298) continue;
+    tiles.push(`<polygon class="tile${row === 4 && col === 1 ? " on" : ""}" points="${rhombus(cx, cy)}"/>`);
+  }
+}
+document.getElementById("tiles").innerHTML = tiles.join("");
+</script>

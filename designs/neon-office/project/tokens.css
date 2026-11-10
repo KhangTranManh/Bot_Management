@@ -1,0 +1,57 @@
+/* Neon Office — generated from tokens.json */
+:root, [data-theme="dark"] {
+  --void: #07060f;
+  --floor: #0d0b1c;
+  --panel: #120f26;
+  --panel-raised: #1a1535;
+  --line: #2b2550;
+  --line-strong: #463c7a;
+  --fg: #ece9ff;
+  --muted: #8f89b8;
+  --magenta: #ff2bd6;
+  --cyan: #00e5ff;
+  --acid: #ffd23f;
+  --violet: #9d7bff;
+  --run: #3dffa2;
+  --queue: #4da3ff;
+  --wait: #ffb020;
+  --out: #ff3864;
+  --idle: #5d5885;
+  --on-neon: var(--void);
+  --glow-magenta: 0 0 14px #ff2bd666;
+  --glow-cyan: 0 0 12px #00e5ff55;
+  --glow-wait: 0 0 12px #ffb02066;
+  --panel-depth: 0 18px 40px -16px #000000e6;
+}
+:root {
+  --space-1: 4px;
+  --space-1\.5: 6px;
+  --space-2: 8px;
+  --space-2\.5: 10px;
+  --space-3\.5: 14px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --radius-none: 0;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-dot: 50%;
+  --notch-sm: 6px;
+  --notch-md: 12px;
+  --opacity-scanline: 0.05;
+  --opacity-dim: 0.18;
+  --opacity-grid: 0.4;
+  --iso-unit: 26px;
+  --iso-desk: 1.7 1.1 0.5;
+  --iso-platform: 0.35;
+  --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.title { font-family: var(--font-display); font-size: 26px; line-height: 1.1; font-weight: 700; letter-spacing: 0.12em; }
+.room { font-family: var(--font-display); font-size: 14px; line-height: 1.3; font-weight: 600; }
+.label { font-family: var(--font-display); font-size: 12px; line-height: 1.3; font-weight: 600; letter-spacing: 0.18em; }
+.body { font-family: var(--font-body); font-size: 14px; line-height: 1.5; font-weight: 400; }
+.body-sm { font-family: var(--font-body); font-size: 12.5px; line-height: 1.45; font-weight: 400; }
+.name-tag { font-family: var(--font-body); font-size: 11px; line-height: 1.2; font-weight: 600; }
+.data { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.4; font-weight: 400; }
+.data-xs { font-family: var(--font-mono); font-size: 10px; line-height: 1.3; font-weight: 500; letter-spacing: 0.08em; }

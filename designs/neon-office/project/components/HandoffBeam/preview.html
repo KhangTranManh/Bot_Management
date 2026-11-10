@@ -1,0 +1,22 @@
+<!-- @dsCard group="Scene" height=170 -->
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<style>body{margin:0;background:var(--void);color:var(--fg);font-family:var(--font-body);font-size:14px;line-height:1.5}.wrap{padding:16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}</style>
+<svg viewBox="-250 -90 500 150" style="display:block;width:100%">
+<defs>
+  <filter id="no-soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="4"/></filter>
+  <filter id="no-bloom" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <linearGradient id="no-beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--magenta)"/><stop offset="1" style="stop-color:var(--cyan)"/></linearGradient>
+</defs>
+<g id="root"></g>
+</svg>
+<script>
+const curve = (a, b, lift) => `M${a} Q${(a[0] + b[0]) / 2},${(a[1] + b[1]) / 2 - lift} ${b}`;
+const d = curve([-190, 30], [170, 10], 60);
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const label = `<g class="no-bubble"><rect x="-62" y="-21" width="124" height="17" rx="2"/><text x="0" y="-9" text-anchor="middle">Sửa validate số thẻ</text></g>`;
+const bubble = reduce ? `<g transform="translate(-10 -17)">${label}</g>` : `<g>${label}<animateMotion dur="3.6s" repeatCount="indefinite" path="${d}"/></g>`;
+document.getElementById("root").innerHTML = `<path class="no-link" d="${curve([-190, 30], [170, 30], 20)}"/>
+  <path class="no-beam" d="${d}"/>${bubble}
+  <circle cx="-190" cy="30" r="6" style="fill:var(--magenta)"/><circle cx="170" cy="10" r="6" style="fill:var(--cyan)"/>`;
+</script>
