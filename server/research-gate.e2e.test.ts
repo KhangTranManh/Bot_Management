@@ -124,7 +124,9 @@ describe.skipIf(process.platform === "win32")("research room goal gate", () => {
       modelSelection: { instanceId: "workerFix", model: "claude-sonnet-5" },
       requireAvailableModel: true,
     })).body.bot;
-    const room = (await api("POST", "/api/groups", { name: "Research lab", memberIds: [lead.id, worker.id] })).body.group;
+    const room = (await api("POST", "/api/groups", {
+      name: "Research lab", memberIds: [lead.id, worker.id], setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
     expect((await api("PATCH", `/api/groups/${room.id}`, { kind: "research", cwd: workspace, goalFile: "goal.json" })).status).toBe(200);
 
     // No goal file on disk yet: the run stops at needs-input instead of starting softly.

@@ -111,7 +111,7 @@ describe.skipIf(process.platform === "win32")("room verify gate", () => {
       modelSelection: { instanceId: "workerFix", model: "claude-sonnet-5" },
       requireAvailableModel: true,
     })).body.bot;
-    const room = (await api("POST", "/api/groups", { name: "Gate room", memberIds: [lead.id, worker.id] })).body.group;
+    const room = (await api("POST", "/api/groups", { name: "Gate room", memberIds: [lead.id, worker.id], setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } } })).body.group;
     expect((await api("PATCH", `/api/groups/${room.id}`, {
       cwd: workspace,
       verify: [{ id: "write-check", command: "printf ran > verify-ran.txt" }],
@@ -138,7 +138,7 @@ describe.skipIf(process.platform === "win32")("room verify gate", () => {
       modelSelection: { instanceId: "workerFix", model: "claude-sonnet-5" },
       requireAvailableModel: true,
     })).body.bot;
-    const room = (await api("POST", "/api/groups", { name: "Failing gate room", memberIds: [lead.id, worker.id] })).body.group;
+    const room = (await api("POST", "/api/groups", { name: "Failing gate room", memberIds: [lead.id, worker.id], setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } } })).body.group;
     expect((await api("PATCH", `/api/groups/${room.id}`, {
       cwd: workspace,
       verify: [{ id: "never-green", command: "false" }],

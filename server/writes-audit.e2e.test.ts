@@ -139,7 +139,9 @@ describe.skipIf(process.platform === "win32")("writes audit over the goal loop",
       modelSelection: { instanceId: instance, model: "claude-sonnet-5" },
       requireAvailableModel: true,
     })).body.bot;
-    const room = (await api("POST", "/api/groups", { name: `Build ${instance}`, memberIds: [lead.id, worker.id] })).body.group;
+    const room = (await api("POST", "/api/groups", {
+      name: `Build ${instance}`, memberIds: [lead.id, worker.id], setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
     expect((await api("PATCH", `/api/groups/${room.id}`, { cwd: workspace })).status).toBe(200);
 
     const sent = await api("POST", `/api/groups/${room.id}/messages`, {
