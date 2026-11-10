@@ -221,6 +221,39 @@ beforeAll(async () => {
         },
         config: { cli: FAKE_CLAUDE },
       },
+      roleLead: {
+        driver: "claudeAgent",
+        displayName: "Role lead fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify([
+            "Builder takes the page.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Role builder\",\"instruction\":\"Add the page\",\"writes\":[\"page.tsx\"]}]}</openmaus-goal>",
+            "Tested and done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Page added and tested.\"}</openmaus-goal>",
+          ]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "role-lead-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      roleWorker: {
+        driver: "claudeAgent",
+        displayName: "Role worker fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Added page.tsx."]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "role-worker-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      roleTester: {
+        driver: "claudeAgent",
+        displayName: "Role tester fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Build and tests pass.\nVERDICT: PASS"]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "role-tester-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
       sideLead: {
         driver: "claudeAgent",
         displayName: "Side lead fixture",
@@ -1274,7 +1307,7 @@ describe("goal-driven channel runs", () => {
     }, { timeout: hostTimeout(15_000) }).toMatchObject({
       status: "completed",
       coordinatorBotId: lead.id,
-      turnCount: 4,
+      turnCount: 3,
       detail: "Plan drafted and risks listed.",
     });
 
@@ -1374,5 +1407,30 @@ describe("goal-driven channel runs", () => {
     expect((await api("PATCH", `/api/groups/${room.id}`, { goalWaves: false })).body.group.goalWaves).toBe(false);
     expect((await api("PATCH", `/api/groups/${room.id}`, { goalWaves: "no" })).status).toBe(400);
     expect((await api("PATCH", `/api/groups/${room.id}`, { goalWaves: true })).body.group.goalWaves).toBeUndefined();
+  });
+
+  it("runs a goal with standing roles: the Lead plans, the Worker builds, an added Tester passes it, then it completes", async () => {
+    const make = async (name: string, instanceId: string) => (await api("POST", "/api/bots", { name, modelSelection: { instanceId, model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const lead = await make("Role lead", "roleLead");
+    const builder = await make("Role builder", "roleWorker");
+    const checker = await make("Role checker", "roleTester");
+    const room = (await api("POST", "/api/groups", {
+      name: "Role team", memberIds: [lead.id, builder.id, checker.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: builder.id } },
+    })).body.group;
+    expect((await api("PATCH", `/api/groups/${room.id}`, { roles: { [lead.id]: "lead", [builder.id]: "lead" } })).status).toBe(400);
+    expect((await api("PATCH", `/api/groups/${room.id}`, { roles: { "not-a-member": "worker" } })).status).toBe(400);
+    expect((await api("PATCH", `/api/groups/${room.id}`, { roles: { [lead.id]: "boss" } })).status).toBe(400);
+    const roles = { [lead.id]: "lead", [builder.id]: "worker", [checker.id]: "tester" };
+    expect((await api("PATCH", `/api/groups/${room.id}`, { roles })).body.group.roles).toEqual(roles);
+
+    expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "Add the page", mode: "goal", sendId: "goal_send_roles_1234567890" })).status).toBe(202);
+    const roomState = async () => (await api("GET", "/api/bots?messages=40")).body.groups.find((candidate: { id: string }) => candidate.id === room.id);
+    await expect.poll(async () => (await roomState())?.messages.find((message: { kind: string }) => message.kind === "goal.run")?.goalRun, { timeout: hostTimeout(20_000) })
+      .toMatchObject({ status: "completed", coordinatorBotId: lead.id, detail: "Page added and tested." });
+    const results = (await roomState()).messages
+      .filter((message: { kind: string; roomRequest?: { phase?: string } }) => message.kind === "activity" && message.roomRequest?.phase === "result")
+      .map((message: { from?: { name?: string } }) => message.from?.name);
+    expect(results).toEqual(["Role builder", "Role checker"]);
   });
 });

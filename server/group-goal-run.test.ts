@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { TeamRole } from "../shared/team-roles.ts";
 import {
   GROUP_GOAL_CONTROL_CLOSE,
   GROUP_GOAL_CONTROL_OPEN,
@@ -172,6 +173,7 @@ const settled = (replyText: string): GoalStepResult => ({ ran: true, replyText, 
 function goalRun(options: {
   solo?: boolean;
   tasksAllowed?: boolean;
+  roles?: Record<string, TeamRole>;
   members?: Array<{ id: string; name: string }>;
   steps: Array<GoalStepResult | ((call: number) => GoalStepResult)>;
   cancelAfter?: number;
@@ -189,6 +191,7 @@ function goalRun(options: {
     members,
     solo: options.solo,
     tasksAllowed: options.tasksAllowed,
+    ...(options.roles ? { roles: options.roles } : {}),
     ...(options.dispatchWave ? { dispatchWave: options.dispatchWave } : {}),
     cancelled: () => cancelled,
     current: (id) => members.find((member) => member.id === id),
@@ -397,7 +400,7 @@ describe("one goal-run loop for a room and a one-on-one chat", () => {
     expect(goal.finished[0]?.status).toBe("blocked");
   });
 
-  it("dispatches a wave batch through dispatchWave; the run counts each child as one turn", async () => {
+  it("dispatches a wave batch through dispatchWave; the run counts the batch as one turn", async () => {
     const goal = goalRun({
       tasksAllowed: true,
       members: [{ id: "lead-id", name: "Lead" }, { id: "scout-id", name: "Scout" }, { id: "miso-id", name: "Miso" }],
@@ -413,7 +416,7 @@ describe("one goal-run loop for a room and a one-on-one chat", () => {
     await goal.done;
     expect(goal.calls.map((call) => [call.bot, call.coordinator])).toEqual([["lead-id", true], ["lead-id", true]]);
     expect(goal.finished).toEqual([{ status: "completed", detail: "Both done." }]);
-    expect(goal.run.turnCount).toBe(4);
+    expect(goal.run.turnCount).toBe(3);
   });
 
   it("a dispatchWave hard failure finishes the run like a single-worker failure", async () => {
@@ -459,5 +462,113 @@ describe("one goal-run loop for a room and a one-on-one chat", () => {
     await goal.done;
     expect(goal.calls).toHaveLength(1);
     expect(goal.finished).toEqual([{ status: "blocked", detail: "Lead did not provide a valid next-step decision." }]);
+  });
+});
+
+describe("team roles in a goal run", () => {
+  const team = [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Builder" }, { id: "tester-id", name: "Checker" }];
+  const roles: Record<string, TeamRole> = { "lead-id": "lead", "worker-id": "worker", "tester-id": "tester" };
+  const work = [{ id: "t1", assignee: "Builder", instruction: "Add the checkout page", writes: ["src/checkout.tsx"] }];
+
+  it("adds a Tester task after the work, tells each role its rule, and completes once the Tester passes", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, roles, members: team,
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work })),
+        settled("Added src/checkout.tsx."),
+        settled("Build and tests ran.\nVERDICT: PASS"),
+        settled(envelope({ status: "completed", detail: "Checkout shipped." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "worker-id", "tester-id", "lead-id"]);
+    expect(goal.calls[0]!.instructions).toContain("[team role: worker]");
+    expect(goal.calls[1]!.instructions).toContain("You are a Worker");
+    expect(goal.calls[2]!.instructions).toContain("VERDICT: PASS or VERDICT: FAIL");
+    expect(goal.calls[2]!.instructions).toContain("Test the changes from t1");
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Checkout shipped." }]);
+  });
+
+  it("refuses a plan that gives work to the Lead or a Worker task without writes, and asks again", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, roles, members: team,
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Builder", instruction: "Add it" }] })),
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Lead", instruction: "Do it", writes: ["a.ts"] }] })),
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Builder", instruction: "Add it" }] })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "lead-id"]);
+    expect(goal.calls[1]!.instructions).toContain("Plan refused: task t1 for Worker Builder declares no writes");
+    expect(goal.calls[2]!.instructions).toContain("who is the Lead");
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("kept breaking the team roles") }]);
+  });
+
+  it("does not let the Lead complete before the Tester passes, and sends the Tester's failure back as a fix round", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, roles, members: team,
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work })),
+        settled("Added src/checkout.tsx."),
+        settled("Checkout test fails: total is NaN.\nVERDICT: FAIL"),
+        settled(envelope({ status: "completed", detail: "Done anyway." })),
+        settled(envelope({ status: "continue", detail: "Fix", tasks: [{ id: "t2", assignee: "Builder", instruction: "Fix the NaN total", writes: ["src/checkout.tsx"] }] })),
+        settled("Fixed the total."),
+        settled("All green.\nVERDICT: PASS"),
+        settled(envelope({ status: "completed", detail: "Checkout fixed." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls[3]!.instructions).toContain("Checker (Tester) reported FAIL");
+    expect(goal.calls[3]!.instructions).toContain("total is NaN");
+    expect(goal.calls[4]!.instructions).toContain("Not done yet: the latest changes have not passed the tester");
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Checkout fixed." }]);
+  });
+
+  it("blocks after the fix rounds run out", async () => {
+    const steps: GoalStepResult[] = [];
+    for (let round = 0; round < 4; round++) {
+      steps.push(settled(envelope({ status: "continue", detail: "Try", tasks: [{ id: `t${round}`, assignee: "Builder", instruction: `Attempt ${round}`, writes: ["a.ts"] }] })));
+      steps.push(settled(`Attempt ${round} done.`));
+      steps.push(settled("Still broken.\nVERDICT: FAIL"));
+    }
+    const goal = goalRun({ tasksAllowed: true, roles, members: team, steps });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "The Tester still failed the work after 3 fix rounds." }]);
+  });
+
+  it("runs a goal without roles exactly as before", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, members: team,
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Builder", instruction: "Add it" }] })),
+        settled("Added."),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "worker-id", "lead-id"]);
+    expect(goal.calls[0]!.instructions).not.toContain("team role");
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+  });
+
+  it("counts a parallel batch as one team turn and marks a Reviewer's task read-only", async () => {
+    const reviewRoles: Record<string, TeamRole> = { "lead-id": "lead", "worker-id": "worker", "tester-id": "reviewer" };
+    const batches: Array<Array<{ botId: string; readOnly?: boolean }>> = [];
+    const goal = goalRun({
+      tasksAllowed: true, roles: reviewRoles, members: team,
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [...work, { id: "r1", assignee: "Checker", instruction: "Review the design doc" }] })),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ],
+      dispatchWave: async (batch) => {
+        batches.push(batch.map((task) => ({ botId: task.bot.id, ...((task as { readOnly?: boolean }).readOnly ? { readOnly: true } : {}) })));
+        return batch.map((task) => ({ botId: task.bot.id, ran: true, replyText: "ok", outcome: "settled" as const }));
+      },
+    });
+    await goal.done;
+    expect(batches).toEqual([[{ botId: "worker-id" }, { botId: "tester-id", readOnly: true }]]);
+    expect(goal.run.turnCount).toBe(3);
   });
 });

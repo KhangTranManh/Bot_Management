@@ -26,6 +26,7 @@ import type { AutomationLine, RoutineRunCardData } from "./routine-run.ts";
 import type { WidgetPayload } from "./widget.ts";
 import type { AppFromRef, AppPayload, AppPointedRef } from "./app.ts";
 import type { GroupGoalRunCardData } from "./group-goal-run.ts";
+import type { TeamRole } from "./team-roles.ts";
 import type { RuntimeEvent } from "./runtime-events.ts";
 import type { NotificationLogEntry } from "./notification.ts";
 import type { Routine, RoutineRun } from "./routines.ts";
@@ -844,6 +845,8 @@ export interface GroupTask {
 export interface WireGroup {
   /** False turns off parallel goal waves in this room; absent follows the member count (three or more). */
   goalWaves?: boolean;
+  /** Standing team roles by member id: at most one lead. Goals in a room with roles follow them. */
+  roles?: Record<string, TeamRole>;
   /** Computed from the usage ledger, not stored in groups.json. */
   usage?: GroupThreadUsage | null;
   /** transient: each member's context in the active thread, from its last

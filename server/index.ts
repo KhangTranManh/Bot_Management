@@ -233,6 +233,7 @@ import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
+import { isTeamRole, type TeamRole } from "../shared/team-roles.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
 
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
@@ -3699,6 +3700,10 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     const responder = checkedGroupResponder(body.defaultResponder, memberIds);
     if (!responder) throw Object.assign(new Error("invalid default responder"), { status: 400 });
     patch.defaultResponder = responder;
+  }
+  if (body.roles !== undefined) {
+    const memberIds = (patch.memberIds as string[] | undefined) ?? existing.memberIds;
+    patch.roles = checkedTeamRoles(body.roles, memberIds);
   }
   if (body.goalWaves !== undefined) {
     if (typeof body.goalWaves !== "boolean") throw Object.assign(new Error("goalWaves must be true or false"), { status: 400 });
@@ -10747,7 +10752,7 @@ async function runGoalWaveOnTree(args: {
   coordinatorBot: BotRecord;
   run: NonNullable<GroupTurnOperation["goalRun"]>;
   cancelled(): boolean;
-  batch: Array<{ bot: BotRecord; role?: string; assignment: string }>;
+  batch: Array<{ bot: BotRecord; role?: string; assignment: string; readOnly?: boolean }>;
 }): Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }>> {
   const idle = (botId: string, outcome: GroupMemberTurnOutcome, stopReason?: string | null) => ({ botId, ran: false, replyText: "", outcome, stopReason });
   const room = store.group(args.groupId);
@@ -10775,7 +10780,7 @@ async function runGoalWaveOnTree(args: {
     try {
       const { node } = coordinator.enqueue(
         { groupId: args.groupId, threadId: args.threadId, botId: args.coordinatorBot.id },
-        waveId, waveId, { botId: child.bot.id, threadId: child.lane.threadId }, brief, { mode: "work", thread: "new" },
+        waveId, waveId, { botId: child.bot.id, threadId: child.lane.threadId }, brief, { mode: child.readOnly ? "consult" : "work", thread: "new" },
       );
       child.childId = node.id;
     } catch (error) {
@@ -10909,6 +10914,7 @@ async function runGroupGoalOperation(args: {
     coordinator: args.coordinator,
     members: args.members,
     tasksAllowed: Boolean(room && !room.dm) && goalWavesEnabled({ memberCount: args.members.filter((member) => !member.hidden).length, goalWaves: room?.goalWaves }),
+    ...(room && !room.dm && roomRoles(room) ? { roles: roomRoles(room) } : {}),
     cancelled: () => args.operation.cancelled,
     current: (botId) => store.bot(botId) ?? undefined,
     taskThread: (_bot, assignment) => {
@@ -10944,6 +10950,33 @@ type StartGroupTurnOptions = {
 };
 
 const SIDE_REPLY_MAX_TARGETS = 3;
+
+/** A room's roles as the person set them: member ids only, known roles only, at most one lead; none means undefined. */
+function checkedTeamRoles(value: unknown, memberIds: readonly string[]): Record<string, TeamRole> | undefined {
+  const refuse = (message: string) => Object.assign(new Error(message), { status: 400 });
+  if (value === null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw refuse("roles must map member ids to lead, worker, tester or reviewer");
+  const roles: Record<string, TeamRole> = {};
+  for (const [botId, role] of Object.entries(value)) {
+    if (!memberIds.includes(botId)) throw refuse("roles may name only members of this room");
+    if (!isTeamRole(role)) throw refuse("roles must map member ids to lead, worker, tester or reviewer");
+    roles[botId] = role;
+  }
+  if (Object.values(roles).filter((role) => role === "lead").length > 1) throw refuse("a room has at most one lead");
+  return Object.keys(roles).length > 0 ? roles : undefined;
+}
+
+function roomLeadMember<T extends { id: string }>(room: GroupRecord, members: readonly T[]): T | undefined {
+  const roles = roomRoles(room);
+  return roles ? members.find((member) => roles[member.id] === "lead") : undefined;
+}
+
+/** The room's roles for its current members. */
+function roomRoles(room: GroupRecord | null | undefined): Record<string, TeamRole> | undefined {
+  if (!room?.roles) return undefined;
+  const kept = Object.fromEntries(Object.entries(room.roles).filter(([botId]) => room.memberIds.includes(botId)));
+  return Object.keys(kept).length > 0 ? kept : undefined;
+}
 
 /** A person's message that names teammates while the room works: each named teammate answers in a lane of its own,
  * queued behind that teammate's current turn, so the running work and every other teammate keep going. Undefined when
@@ -11108,7 +11141,7 @@ function startGroupTurn(
   }
   const explicitlyMentionedLead = roomResponders(text, routableMembers, { kind: "mentions" }, options.mentions)[0];
   const goalCoordinator = channelMode === "goal"
-    ? requestedGoalCoordinator ?? explicitlyMentionedLead ?? selectGroupGoalCoordinator(routableMembers, group.defaultResponder)
+    ? requestedGoalCoordinator ?? explicitlyMentionedLead ?? roomLeadMember(group, routableMembers) ?? selectGroupGoalCoordinator(routableMembers, group.defaultResponder)
     : null;
   if (!responders.length && group.dm) {
     const lastSpeakerId = [...store.messagesFor(threadId)]

@@ -2,6 +2,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import type { Bot, Group } from "@/state/store";
+import { TEAM_ROLES, type TeamRole } from "../../../shared/team-roles";
 import { BotAvatar } from "../Avatar";
 import { Card, rowCls } from "../bot-panel/rows";
 
@@ -14,6 +15,21 @@ const LABEL: Record<Presence, LocaleKey> = {
   idle: "room.panel.status.idle",
   offline: "room.panel.status.offline",
 };
+
+const ROLE_LABEL: Record<TeamRole, LocaleKey> = {
+  lead: "room.panel.role.lead",
+  worker: "room.panel.role.worker",
+  tester: "room.panel.role.tester",
+  reviewer: "room.panel.role.reviewer",
+};
+
+/** The roles after giving `botId` the role `role`; one lead at most, so a new lead replaces the old one. */
+export function withRole(roles: Readonly<Record<string, TeamRole>> | undefined, botId: string, role: TeamRole | ""): Record<string, TeamRole> {
+  const next: Record<string, TeamRole> = {};
+  for (const [id, current] of Object.entries(roles ?? {})) if (id !== botId && !(role === "lead" && current === "lead")) next[id] = current;
+  if (role) next[botId] = role;
+  return next;
+}
 
 const DOT: Record<Presence, string> = {
   working: "bg-accent animate-pulse",
@@ -31,8 +47,13 @@ export function presenceOf(bot: Pick<Bot, "busy" | "activity">, speaking: boolea
   return "idle";
 }
 
-/** One row per member: who is working, waiting on the person, idle or unreachable, and on which model. */
-export function RoomStatus({ group, members }: { group: Pick<Group, "busyBotId" | "messages">; members: Bot[] }) {
+/** One row per member: its team role, who is working, waiting on the person, idle or unreachable, and on which model.
+ * `onRoles` makes each role a choice. */
+export function RoomStatus({ group, members, onRoles }: {
+  group: Pick<Group, "busyBotId" | "messages" | "roles">;
+  members: Bot[];
+  onRoles?: (roles: Record<string, TeamRole>) => void;
+}) {
   const goal = [...group.messages].reverse().find((message) => message.kind === "goal.run")?.goalRun;
   const liveGoal = goal && goal.status === "working" ? goal : undefined;
   return (
@@ -46,6 +67,22 @@ export function RoomStatus({ group, members }: { group: Pick<Group, "busyBotId" 
               <div className="truncate text-[13px] font-medium text-ink">{member.name}</div>
               <div className="truncate text-[12px] text-ink-tertiary">{member.modelSelection.model}</div>
             </div>
+            {onRoles ? (
+              <select
+                data-role-select={member.id}
+                aria-label={t("room.panel.role.aria", { name: member.name })}
+                value={group.roles?.[member.id] ?? ""}
+                onChange={(event) => onRoles(withRole(group.roles, member.id, event.target.value as TeamRole | ""))}
+                className="shrink-0 rounded-md border border-hairline/60 bg-inset px-1.5 py-0.5 text-[12px] text-ink-secondary"
+              >
+                <option value="">{t("room.panel.role.none")}</option>
+                {TEAM_ROLES.map((role) => <option key={role} value={role}>{t(ROLE_LABEL[role])}</option>)}
+              </select>
+            ) : group.roles?.[member.id] ? (
+              <span data-role={group.roles[member.id]} className="shrink-0 rounded-md bg-ink/[0.05] px-1.5 py-0.5 text-[11px] text-ink-secondary">
+                {t(ROLE_LABEL[group.roles[member.id]!])}
+              </span>
+            ) : null}
             <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-ink-secondary">
               <span aria-hidden="true" className={cn("size-2 rounded-full", DOT[presence])} />
               {presence === "coordinating" && liveGoal

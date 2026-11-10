@@ -195,7 +195,7 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
           {page === null ? (
             <>
               <RoomHero group={group} members={members} />
-              <RoomStatus group={group} members={members} />
+              <RoomStatus group={group} members={members} onRoles={(roles) => dispatch({ type: "patchGroup", groupId: group.id, patch: { roles } })} />
               <Card>
                 <NavRow
                   data-panel-page="responder"
