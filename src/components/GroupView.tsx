@@ -59,6 +59,8 @@ import { SecretRequestCard } from "./SecretRequestCard";
 import { SignInRequestCard } from "./SignInRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard } from "./GoalRunCard";
+import { GoalRunPanel } from "./GoalRunPanel";
+import { closeGoalPanel, openGoalPanel, useGoalPanel } from "@/lib/goal-panel";
 import { AttachmentGallery, MessageAttachmentGallery, replyAttachmentGroup } from "./AttachmentGallery";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { OptionCard } from "./OptionCard";
@@ -441,7 +443,7 @@ export const Transcript = memo(function Transcript({
             </div>
           ) : m.kind === "goal.run" ? (
             <div className="flex justify-start">
-              <GoalRunCard message={m} />
+              <GoalRunCard message={m} onOpen={() => openGoalPanel(m.id)} />
             </div>
           ) : m.kind === "routine.run" ? (
             <div className="flex justify-start">
@@ -883,6 +885,8 @@ export function GroupView({ group }: { group: Group }) {
   const composerDock = useComposerDockPad(composerDockRef);
   const [folderOpen, setFolderOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const goalPanelId = useGoalPanel();
+  useEffect(() => closeGoalPanel, [group.id]);
   const [findOpen, setFindOpen] = useState(false);
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     group.threadId,
@@ -1001,6 +1005,7 @@ export function GroupView({ group }: { group: Group }) {
   return (
     <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
       <GroupCallOverlay group={group} members={members} />
+      {goalPanelId && <GoalRunPanel group={group} cardId={goalPanelId} onClose={closeGoalPanel} />}
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}

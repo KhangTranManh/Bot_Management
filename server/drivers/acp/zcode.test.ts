@@ -9,7 +9,7 @@ import type { ProviderInstance } from "../../contracts.ts";
 import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { removeTempDir } from "../../testing/cleanup.ts";
 import { BUILT_IN_DRIVERS } from "../builtIn.ts";
-import { ZcodeAgentDriver, zcodeHome, zcodeSignedIn } from "./zcode.ts";
+import { ZcodeAgentDriver, resolveZcodeModels, zcodeHome, zcodeSignedIn } from "./zcode.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "../../testing/fake-acp-cli.ts");
 const MODELS = "GLM-5.3,GLM-5.3-Flash";
@@ -35,7 +35,7 @@ describe("ZCode ACP driver", () => {
   async function create(environment: Record<string, string> = {}) {
     instance = await ZcodeAgentDriver.create({
       instanceId: `zcode-contract-${Math.random().toString(36).slice(2)}`, displayName: "ZCode", enabled: true,
-      environment: { FAKE_ACP_MODELS: MODELS, FAKE_ACP_DUMP: join(scratch, "launch.json"), ...environment },
+      environment: { FAKE_ACP_MODELS: MODELS, FAKE_ACP_MODES: "plan,build,edit,guarded,yolo", FAKE_ACP_DUMP: join(scratch, "launch.json"), ...environment },
       config: { cli: FAKE_CLI, fullAuto: false },
     });
     recorder = recordEvents(instance.adapter);
@@ -102,7 +102,7 @@ describe("ZCode ACP driver", () => {
     expect(launch.argv).toEqual([]);
     expect(launch.env.ZCODE_ACP_MODE).toBe("build");
     expect(launch.env.ZCODE_ACP_SHOW_COMPLETION_STATUS).toBe("0");
-    expect(configCalls().filter((call) => call.method === "session/set_mode").map((call) => call.params.modeId)).toEqual(["build"]);
+    expect(configCalls().filter((call) => call.method === "session/set_config_option" && call.params.configId === "mode").map((call) => call.params.value)).toEqual(["build"]);
     expect(configCalls().some((call) => call.method === "session/set_config_option" && call.params.configId === "model")).toBe(false);
   });
 
@@ -119,6 +119,12 @@ describe("ZCode ACP driver", () => {
     await recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId);
     const launch = JSON.parse(readFileSync(join(scratch, "launch.json"), "utf8"));
     expect(launch.env.ZCODE_ACP_MODE).toBe("yolo");
-    expect(configCalls().filter((call) => call.method === "session/set_mode").map((call) => call.params.modeId)).toEqual(["yolo"]);
+    expect(configCalls().filter((call) => call.method === "session/set_config_option" && call.params.configId === "mode").map((call) => call.params.value)).toEqual(["yolo"]);
+  });
+
+  it("lists the bridge's providerId\\modelId models in the picker", async () => {
+    const ids = ["new-provider\\glm/glm-5.3", "new-provider-2\\deepseek-v4-pro"];
+    const catalog = await resolveZcodeModels({ ...process.env, FAKE_ACP_MODELS: ids.join(",") }, { cli: FAKE_CLI });
+    expect(catalog.options.map((option) => option.id)).toEqual(["agent-default", ...ids]);
   });
 });

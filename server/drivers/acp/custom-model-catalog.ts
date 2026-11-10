@@ -22,6 +22,8 @@ export interface AcpDiscoveryOptions {
   passthrough?: { id: string; label: string };
   /** Mark every option `custom: true`, as a custom-only engine's picker lists only those. */
   custom?: boolean;
+  /** Accept `\` in advertised ids, as ZCode's `providerId\modelId`. */
+  backslashIds?: boolean;
   /** Switch to each model to read its own variants. False stops after session/new. */
   variants?: boolean;
   /** The catalog default when the agent offers it; otherwise the session's current model. */
@@ -72,9 +74,9 @@ const AGENT_DEFAULT = { id: "agent-default", label: "Agent default" };
 /** A discovered model or variant id is an opaque key the picker, the request rebuild and the set_model round-trips
  * treat as trusted; the agent advertising it is untrusted, so traversal, control characters, quotes and shell
  * metacharacters are skipped. Real ids include parameterised forms (`grok-4.7[context=256k,fast=true]`). */
-function usableDiscoveredId(id: unknown): id is string {
+function usableDiscoveredId(id: unknown, backslash = false): id is string {
   return typeof id === "string" && id.length <= 200 && !id.includes("..")
-    && /^[A-Za-z0-9][A-Za-z0-9 ._():[\]{}=,@+/:-]*$/.test(id);
+    && (backslash ? /^[A-Za-z0-9][A-Za-z0-9 ._():[\]{}=,@+/:\\-]*$/ : /^[A-Za-z0-9][A-Za-z0-9 ._():[\]{}=,@+/:-]*$/).test(id);
 }
 
 /** Bidirectional controls can reorder or hide picker text, so a label rendered for one model must not carry them. */
@@ -214,7 +216,7 @@ export async function discoverAcpModels(
     for (const model of modelOption.options) {
       if (model.id === passthrough?.id) continue;
       if (failure) throw failure;
-      if (!usableDiscoveredId(model.id)) continue;
+      if (!usableDiscoveredId(model.id, discovery.backslashIds)) continue;
       discovered++;
       let confirmed: unknown;
       if (model.id === modelOption.currentValue) {
@@ -231,7 +233,7 @@ export async function discoverAcpModels(
           if (failure) throw failure;
         }
       }
-      const variants = confirmed ? acpVariantOption(confirmed)?.options.flatMap((variant) => usableDiscoveredId(variant.id)
+      const variants = confirmed ? acpVariantOption(confirmed)?.options.flatMap((variant) => usableDiscoveredId(variant.id, discovery.backslashIds)
         ? [{ ...variant, label: usableDiscoveredLabel(variant.label) ? variant.label : variant.id }]
         : []) : undefined;
       const named = discovery.label ? discovery.label(model, initial) : model.label;
@@ -248,7 +250,7 @@ export async function discoverAcpModels(
     // beats replacing it with a picker that has lost its models.
     if (!discovered) throw new Error("The ACP agent did not advertise any usable models. The previous catalog was kept.");
     const preferred = discovery.default && options.some((option) => option.id === discovery.default) ? discovery.default : undefined;
-    const current = usableDiscoveredId(modelOption.currentValue) ? modelOption.currentValue : undefined;
+    const current = usableDiscoveredId(modelOption.currentValue, discovery.backslashIds) ? modelOption.currentValue : undefined;
     catalog = { default: passthrough?.id ?? preferred ?? current ?? options[0].id, options };
   } catch (error) {
     thrown = error;

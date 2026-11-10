@@ -23,6 +23,7 @@ let routineGoalFinishGate = "";
 let queueFinishGate = "";
 let stopScopedLeadFinishGate = "";
 let waveHeldFinishGate = "";
+let sideHeldFinishGate = "";
 let base = "";
 let stderr = "";
 
@@ -59,6 +60,7 @@ beforeAll(async () => {
   queueFinishGate = join(home, "queue-finish");
   stopScopedLeadFinishGate = join(home, "stop-scoped-lead-finish");
   waveHeldFinishGate = join(home, "wave-held-finish");
+  sideHeldFinishGate = join(home, "side-held-finish");
   writeFileSync(stopScopedLeadFinishGate, "allow initial goal delegation");
   const data = join(home, ".openmausbot");
   const staticDir = join(home, "static");
@@ -193,6 +195,41 @@ beforeAll(async () => {
             "The scheduled review is complete.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Scheduled team review completed.\"}</openmaus-goal>",
           ]),
           FAKE_CLAUDE_REPLY_STATE: join(home, "routine-goal-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      sideLead: {
+        driver: "claudeAgent",
+        displayName: "Side lead fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify([
+            "Splitting up.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Side held\",\"instruction\":\"Draft and report\",\"writes\":[\"plan.md\"]}]}</openmaus-goal>",
+            "Done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Side goal done.\"}</openmaus-goal>",
+            "Done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Side goal done.\"}</openmaus-goal>",
+          ]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "side-lead-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      sideHeld: {
+        driver: "claudeAgent",
+        displayName: "Side held fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "slow",
+          FAKE_CLAUDE_SLOW_FINISH_GATE: sideHeldFinishGate,
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Drafted and reported."]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "side-held-replies.txt"),
+        },
+        config: { cli: FAKE_CLAUDE },
+      },
+      sideFree: {
+        driver: "claudeAgent",
+        displayName: "Side free fixture",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify(["Going fine, the draft is in progress."]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "side-free-replies.txt"),
         },
         config: { cli: FAKE_CLAUDE },
       },
@@ -1229,5 +1266,51 @@ describe("goal-driven channel runs", () => {
     expect(JSON.stringify(current.messages)).not.toContain("<openmaus-goal>");
     expect(JSON.stringify(current.messages)).not.toContain("\"tasks\":");
     expect(current.working).toBe(false);
+  });
+
+  it("answers a teammate named mid-goal in a lane of its own while the goal keeps running", async () => {
+    const lead = (await api("POST", "/api/bots", {
+      name: "Side lead",
+      modelSelection: { instanceId: "sideLead", model: "claude-sonnet-5" },
+      requireAvailableModel: true,
+    })).body.bot;
+    const held = (await api("POST", "/api/bots", {
+      name: "Side held",
+      modelSelection: { instanceId: "sideHeld", model: "claude-sonnet-5" },
+      requireAvailableModel: true,
+    })).body.bot;
+    const free = (await api("POST", "/api/bots", {
+      name: "Side free",
+      modelSelection: { instanceId: "sideFree", model: "claude-sonnet-5" },
+      requireAvailableModel: true,
+    })).body.bot;
+    const room = (await api("POST", "/api/groups", {
+      name: "Side team",
+      memberIds: [lead.id, held.id, free.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
+    const roomState = async () => (await api("GET", "/api/bots?messages=40")).body.groups.find((candidate: { id: string }) => candidate.id === room.id);
+    const goalStatus = async () => (await roomState())?.messages.find((message: { kind: string }) => message.kind === "goal.run")?.goalRun?.status;
+
+    expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "Plan the launch", mode: "goal", sendId: "goal_send_side_1234567890" })).status).toBe(202);
+    await expect.poll(async () => (await roomState())?.messages.some((message: { kind: string }) => message.kind === "goal.run"), { timeout: hostTimeout(15_000) }).toBe(true);
+    await expect.poll(async () => (await roomState())?.working, { timeout: hostTimeout(15_000) }).toBe(true);
+
+    const asked = await api("POST", `/api/groups/${room.id}/messages`, { text: "@Side free how is it going?", sendId: "chat_send_side_1234567890" });
+    expect(asked.status).toBe(202);
+    expect(asked.body.queued).not.toBe(true);
+    expect(asked.body.message).toMatchObject({ role: "user" });
+    await expect.poll(async () => (await roomState())?.messages.filter((message: { kind: string; from?: { name?: string }; roomRequest?: { phase?: string } }) =>
+      message.kind === "activity" && message.roomRequest?.phase === "result" && message.from?.name === "Side free").length, { timeout: hostTimeout(15_000) }).toBe(1);
+    expect(await goalStatus()).toBe("working");
+
+    const askedLead = await api("POST", `/api/groups/${room.id}/messages`, { text: "@Side lead status please?", sendId: "chat_send_side_lead_1234567" });
+    expect(askedLead.status).toBe(202);
+    expect(askedLead.body.queued).not.toBe(true);
+    const failures = (await roomState())?.messages.filter((message: { tool?: { name?: string; ok?: boolean } }) => message.tool?.ok === false && /could not take this message/.test(message.tool?.name ?? ""));
+    expect(failures).toEqual([]);
+
+    writeFileSync(sideHeldFinishGate, "release the held plan worker");
+    await expect.poll(goalStatus, { timeout: hostTimeout(15_000) }).toBe("completed");
   });
 });

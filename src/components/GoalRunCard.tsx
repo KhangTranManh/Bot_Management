@@ -56,7 +56,7 @@ function StatusIcon({ status }: { status: GroupGoalRunCardData["status"] }) {
 }
 
 /** `solo` is a one-on-one chat's run, where the bot works alone; `onStop` ends a working run from the card. */
-export function GoalRunCard({ message, solo = false, onStop }: { message: Message; solo?: boolean; onStop?: () => void }) {
+export function GoalRunCard({ message, solo = false, onStop, onOpen }: { message: Message; solo?: boolean; onStop?: () => void; onOpen?: () => void }) {
   const run = message.goalRun;
   if (!run) {
     const fallback = compact(message.text, DETAIL_LIMIT);
@@ -77,7 +77,14 @@ export function GoalRunCard({ message, solo = false, onStop }: { message: Messag
   return (
     <section
       aria-label={t("routines.goal.runLabel", { status: t(copy.label) })}
-      className={cn("w-full max-w-[680px] rounded-2xl border bg-card px-3.5 py-3 shadow-sm", copy.border)}
+      className={cn("w-full max-w-[680px] rounded-2xl border bg-card px-3.5 py-3 shadow-sm", copy.border, onOpen && "cursor-pointer hover:bg-raised/60")}
+      {...(onOpen ? {
+        role: "button", tabIndex: 0, "aria-haspopup": "dialog", title: t("goal.panel.open"),
+        onClick: (event: { target: EventTarget | null }) => { if (!(event.target instanceof Element && event.target.closest("button"))) onOpen(); },
+        onKeyDown: (event: { key: string; target: EventTarget; currentTarget: EventTarget; preventDefault(): void }) => {
+          if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) { event.preventDefault(); onOpen(); }
+        },
+      } : {})}
     >
       <div className="flex items-start gap-3">
         <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-inset">

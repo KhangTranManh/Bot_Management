@@ -17,6 +17,7 @@ import { RoomWorkingFolder, roomWorkingFolder } from "../RoomWorkingFolder";
 import { buttonCls, Card, ColRow, NavRow, PageHeader, roundButtonCls, rowCls, RowText } from "../bot-panel/rows";
 import { sidePanelCls } from "../bot-panel/side-panel";
 import { ResponderPage } from "./ResponderPage";
+import { RoomStatus } from "./RoomStatus";
 
 type RoomPage = "responder" | "folder";
 
@@ -191,6 +192,7 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
           {page === null ? (
             <>
               <RoomHero group={group} members={members} />
+              <RoomStatus group={group} members={members} />
               <Card>
                 <NavRow
                   data-panel-page="responder"

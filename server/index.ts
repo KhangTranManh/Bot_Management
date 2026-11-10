@@ -10936,6 +10936,63 @@ type StartGroupTurnOptions = {
   queuedGroup?: ChannelQueueItem[];
 };
 
+const SIDE_REPLY_MAX_TARGETS = 3;
+
+/** A person's message that names teammates while a goal runs: each named teammate answers in a lane of its own, queued
+ * behind that teammate's current turn, so the goal and every other teammate keep going. Undefined when the message does
+ * not qualify, and the caller queues it behind the goal as before. */
+function startGoalSideReply(
+  groupId: string,
+  threadId: string,
+  text: string,
+  replyTo: ReplyTarget | undefined,
+  sendId: string | undefined,
+  options: StartGroupTurnOptions,
+): Message | undefined {
+  const room = store.group(groupId);
+  if (!room || room.dm) return undefined;
+  const run = [...(groupTurnOperations.get(groupId) ?? [])]
+    .find((operation) => !operation.cancelled && operation.threadId === threadId && operation.goalRun && !operation.goalRun.finished)?.goalRun;
+  if (!run) return undefined;
+  const members = room.memberIds.map((id) => store.bot(id)).filter((bot): bot is BotRecord => Boolean(bot));
+  const targets = roomResponders(text, members, { kind: "mentions" }, options.mentions).filter((bot) => !roomHeld(room, bot.id));
+  if (targets.length === 0 || targets.length > SIDE_REPLY_MAX_TARGETS) return undefined;
+  // The request root must not be a bot it hands work to: a runtime request cannot be assigned back to an ancestor.
+  // It must also owe nobody an answer, or the lane refuses as a request cycle.
+  const lead = members.find((member) => !targets.some((target) => target.id === member.id) && !roomHeld(room, member.id)
+    && !coordinator.active().some((node) => node.botId === member.id && !ENDED.has(node.status)));
+  if (!lead) return undefined;
+  const message = store.appendMessage(threadId, {
+    role: "user", kind: "text", text, replyToId: replyTo?.id, reaction: replyTo?.reactedWith, sendId,
+    channelMode: "chat", via: options.via, sender: options.sender,
+  });
+  if (options.trigger) turnTriggers.set(threadId, options.trigger);
+  const sender = { id: lead.id, name: lead.name };
+  const rootId = randomUUID();
+  coordinator.beginTurn({
+    id: rootId,
+    address: { groupId, threadId, botId: lead.id },
+    brief: `Message from the person while the goal runs: ${text}`,
+    level: roomTurnApprovalMode(lead, threadId),
+    origin: OUTSIDE,
+    reply: "poll",
+  });
+  const brief = `The person wrote this while the team's goal keeps running. Answer them briefly and stop: read and explain only, change no files and start no new work.\n\n${text}`;
+  for (const bot of targets) {
+    try {
+      const lane = roomJobs.openLane(room, threadId, bot.id, sender, text);
+      coordinator.enqueue({ groupId, threadId, botId: lead.id }, rootId, rootId, { botId: bot.id, threadId: lane.threadId }, brief, { mode: "work", thread: "new" });
+    } catch (error) {
+      store.appendMessage(threadId, {
+        role: "bot", kind: "activity",
+        tool: { name: serverLine(threadLanguage(threadId), "server.rooms.sideReplyFailed", { bot: bot.name, reason: error instanceof Error ? error.message : String(error) }), ok: false },
+      });
+    }
+  }
+  coordinator.endTurn(rootId, { ok: true, text: "side replies dispatched" });
+  return message;
+}
+
 function startGroupTurn(
   groupId: string,
   text: string,
@@ -12458,7 +12515,7 @@ ROUTES.push(createChannelRoutes({
   messagePage,
   resolveReplyTarget,
   runningTurnInstance,
-  startGroupTurn, engineSteersImages,
+  startGroupTurn, startGoalSideReply, engineSteersImages,
   applyRoomHoldsFromMessage,
   cancelGroupTurnOperations,
   drainQueuedChannelSends,

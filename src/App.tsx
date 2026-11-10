@@ -148,7 +148,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const bot = group || chiefStep ? undefined : (state.bots.find((b) => b.id === state.selectedId) ?? state.bots[0]);
   const notificationFeed = useNotificationFeed() && !remoteClient;
   const advanced = useAdvancedMode();
-  const roomPanelOpen = useRoomPanelShown({ group, state, simple: !advanced && !remoteClient });
+  const roomPanelOpen = useRoomPanelShown({ group, state, simple: !advanced && !remoteClient, autoOpen: true });
   const sidePanelOpen = (Boolean(bot) && (state.settingsOpen || state.computerOpen || state.inspectorOpen || state.activityOpen)) || roomPanelOpen || (notificationFeed && state.notificationsOpen) || inboxShown;
   const collapseSidebar = sidePanelOpen && !sidebarAndPanelFit;
   const calendarFocus = state.activeView === "routines" && state.routinesFocus.view === "calendar";

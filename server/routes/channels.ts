@@ -89,6 +89,14 @@ export interface ChannelRouteDeps {
     queueId: undefined,
     options: { via?: "api"; sender?: ResolvedSender; trigger?: UsageTrigger; threadId?: string; mentions?: string[] },
   ): Message;
+  startGoalSideReply(
+    groupId: string,
+    threadId: string,
+    text: string,
+    replyTo: Message | undefined,
+    sendId: string | undefined,
+    options: { via?: "api"; sender?: ResolvedSender; trigger?: UsageTrigger; mentions?: string[] },
+  ): Message | undefined;
   applyRoomHoldsFromMessage(groupId: string, text: string, mentions?: readonly string[]): void;
   cancelGroupTurnOperations(groupId: string, threadId: string): void;
   drainQueuedChannelSends(): void;
@@ -106,7 +114,7 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
     store, cfg, broadcast, notificationListed, actorKey, threadStarters, phoneSecretSubmissions, sendSequencer, roomMemberContexts, skillReview,
     groupSpeakers, groupTurnOperations, lastReply, cloudThreadRefusal, messageSender, usageTriggerFor, publicGroupState,
     groupWithThread, updateChannel, groupIsWorking, groupThreadIsWorking, readCursor, pageSize, messagePage,
-    resolveReplyTarget, runningTurnInstance, startGroupTurn, engineSteersImages, applyRoomHoldsFromMessage, cancelGroupTurnOperations,
+    resolveReplyTarget, runningTurnInstance, startGroupTurn, startGoalSideReply, engineSteersImages, applyRoomHoldsFromMessage, cancelGroupTurnOperations,
     drainQueuedChannelSends, clearTurnDigestState, closeOpenApprovals, revokeInternalCapabilitiesForThread,
     stagedSkillCleanupsForThread, rejectDeletedThreadSkillStages,
   } = deps;
@@ -404,6 +412,8 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
           const threadWorking = groupThreadIsWorking(current.id, threadId);
           const decision = admit("room", {}, { roomWorking: threadWorking, threadWorking });
           if (decision.action === "queue") {
+            const side = channelMode === "chat" ? startGoalSideReply(current.id, threadId, text, replyTo, sendId, { via, sender: messageSender(auth), trigger, mentions }) : undefined;
+            if (side) return { ok: true as const, threadId, message: side };
             const queued = queueChannelMessage(current.id, threadId, text, {
               replyToId: replyTo?.id,
               sendId,

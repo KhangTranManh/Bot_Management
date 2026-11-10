@@ -1,0 +1,1 @@
+{"default":"gemini-3.8-flash","options":[{"id":"gemini-3.8-flash","label":"Gemini 3.8 Flash","variants":[{"id":"low","label":"Low"},{"id":"medium","label":"Medium"},{"id":"high","label":"High"}]}],"checkedAt":0,"build":"0.1.150"}
