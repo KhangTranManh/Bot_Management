@@ -133,6 +133,13 @@ export function RoomToolChip({ message, roomId, threadId, live = false }: { mess
 
 const USER_COLLAPSE_CHARS = 600;
 const USER_COLLAPSE_LINES = 8;
+/** A bot's reply longer than this folds to its opening, so a long report does not push the room's thread away. */
+const BOT_COLLAPSE_CHARS = 1_200;
+const BOT_COLLAPSE_LINES = 16;
+
+export function botReplyFolds(text: string): boolean {
+  return text.length > BOT_COLLAPSE_CHARS || text.split("\n").length > BOT_COLLAPSE_LINES;
+}
 
 function RoomTextMessage({
   group,
@@ -168,7 +175,9 @@ function RoomTextMessage({
   const focus = state.focusMessage;
   const focusedSearch = focus?.messageId === m.id && Boolean(focus.matchText) && focus.threadId === group.threadId;
   const collapsible = user && !expanded && (display.length > USER_COLLAPSE_CHARS || display.split("\n").length > USER_COLLAPSE_LINES);
-  useEffect(() => { if (focusedSearch && collapsible) setExpanded(true); }, [focusedSearch, collapsible, focus?.nonce]);
+  const botFolds = !user && botReplyFolds(rawText);
+  const botCollapsed = botFolds && !expanded;
+  useEffect(() => { if (focusedSearch && (collapsible || botCollapsed)) setExpanded(true); }, [focusedSearch, collapsible, botCollapsed, focus?.nonce]);
   const simple = !useAdvancedMode();
   const speakerBot = members.find((member) => member.id === m.from?.botId);
   const botText = rawText; const teammates = useTeammates(); const peers = useMemo(() => [...members, ...teammates.peers], [members, teammates]);
@@ -288,7 +297,17 @@ function RoomTextMessage({
                 <ReplyBlocks blocks={blocks} tray={botActions} citation={{ messageId: m.id, ownerType: "group", ownerId: group.id, threadId: group.threadId }}
                   render={(block) => <ChatMarkdown text={block} mentionPeers={peers} everyone={!group.dm} mentionPerson={{ profileName: state.config?.profile?.name }} message={{ threadId: group.threadId, messageId: m.id }} delivered={replyGroup?.delivered} originals={replyGroup?.originals} />} />
               ) : botText ? (
-                <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}><ChatMarkdown text={botText} mentionPeers={peers} everyone={!group.dm} mentionPerson={{ profileName: state.config?.profile?.name }} message={{ threadId: group.threadId, messageId: m.id }} delivered={replyGroup?.delivered} originals={replyGroup?.originals} /></div>
+                <>
+                  <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId} data-bot-folded={botCollapsed ? "" : undefined}
+                    className={cn(botCollapsed && "max-h-56 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]")}>
+                    <ChatMarkdown text={botText} mentionPeers={peers} everyone={!group.dm} mentionPerson={{ profileName: state.config?.profile?.name }} message={{ threadId: group.threadId, messageId: m.id }} delivered={replyGroup?.delivered} originals={replyGroup?.originals} />
+                  </div>
+                  {botFolds && (
+                    <button type="button" data-bot-fold-toggle onClick={() => setExpanded(!expanded)} className="mt-1 text-[13px] text-ink-secondary hover:text-ink">
+                      {t(expanded ? "chat.showLess" : "chat.showFull")}
+                    </button>
+                  )}
+                </>
               ) : null}
               {replyGroup && <AttachmentGallery images={replyGroup.images} files={replyGroup.files} originals={replyGroup.originals} message={{ threadId: group.threadId, messageId: m.id }} eager={eager} beneath />}
             </MessageBoundary>
