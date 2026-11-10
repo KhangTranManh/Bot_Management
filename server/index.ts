@@ -232,6 +232,7 @@ import {
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
+import { goalWavesEnabled } from "./lead-cap.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
 
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
@@ -3698,6 +3699,10 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     const responder = checkedGroupResponder(body.defaultResponder, memberIds);
     if (!responder) throw Object.assign(new Error("invalid default responder"), { status: 400 });
     patch.defaultResponder = responder;
+  }
+  if (body.goalWaves !== undefined) {
+    if (typeof body.goalWaves !== "boolean") throw Object.assign(new Error("goalWaves must be true or false"), { status: 400 });
+    patch.goalWaves = body.goalWaves ? undefined : false;
   }
   if (Object.prototype.hasOwnProperty.call(body, "turnTimeoutMinutes")) {
     if (!existing.dm) {
@@ -10898,10 +10903,12 @@ async function runGroupGoalOperation(args: {
   const run = args.operation.goalRun;
   if (!run) return;
   const skillAuthoringClaim = { claimed: false };
+  const room = store.group(args.groupId);
   await runGoalRun({
     run,
     coordinator: args.coordinator,
     members: args.members,
+    tasksAllowed: Boolean(room && !room.dm) && goalWavesEnabled({ memberCount: args.members.filter((member) => !member.hidden).length, goalWaves: room?.goalWaves }),
     cancelled: () => args.operation.cancelled,
     current: (botId) => store.bot(botId) ?? undefined,
     taskThread: (_bot, assignment) => {

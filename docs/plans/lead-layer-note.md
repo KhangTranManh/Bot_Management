@@ -2,7 +2,7 @@
 
 ## Trạng thái hiện tại (2026-11-10)
 
-`/goal` chạy **song song theo sóng** sau flag `OMB_LEAD_DEPT_CAP=1` (mặc định tắt — tắt = hành vi y hệt cũ, envelope `tasks` bị bỏ qua):
+`/goal` chạy **song song theo sóng** mặc định ở room từ 3 thành viên; room tắt bằng `goalWaves: false` (công tắc trong panel room), `OMB_LEAD_DEPT_CAP=0` tắt mọi nơi, `=1` bật cả room nhỏ. Tắt thì envelope `tasks` bị bỏ qua:
 
 1. **Coordinator ra kế hoạch** thay vì giao từng người: envelope `continue` mang `tasks`
    (`{id, assignee, role?, instruction, reads?, writes?, locks?, dependsOn?}`). Trước khi bung sóng,

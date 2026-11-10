@@ -2,7 +2,6 @@ import type { ServerText } from "../shared/server-text.ts";
 import { noticeFailure } from "./chat-notices.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { GroupDefaultResponder } from "./store.ts";
-import { leadDeptCapEnabled } from "./lead-cap.ts";
 import { LEAD_MAX_WAVE_SIZE, leadBallotFromPlan, leadBatchesForWave, leadWaves, type LeadTaskPlan } from "./lead-schedule.ts";
 
 // Odd so the final bounded turn always falls to the coordinator for the completion decision.
@@ -248,7 +247,7 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   coordinator: Bot;
   members: readonly Bot[];
   solo?: boolean;
-  /** Omitted means the OMB_LEAD_DEPT_CAP environment flag decides. */
+  /** The coordinator may plan parallel waves; omitted means it may not. */
   tasksAllowed?: boolean;
   cancelled(): boolean;
   /** The member as the store has it now. */
@@ -297,7 +296,7 @@ async function stepOnceRetried<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>
 export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>): Promise<void> {
   const { run, coordinator } = deps;
   const assignmentCounts = new Map<string, number>();
-  const tasksAllowed = deps.tasksAllowed ?? leadDeptCapEnabled();
+  const tasksAllowed = deps.tasksAllowed ?? false;
   const goalMembers: GoalRunMember[] = deps.members.map((member) => ({
     id: member.id,
     name: member.name,

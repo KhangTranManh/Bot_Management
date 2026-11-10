@@ -4932,6 +4932,8 @@
   "room.panel.folder.own": "Its own folder",
   "room.panel.instructions": "Instructions",
   "room.panel.instructionsHint": "Tell the bots what this room is for",
+  "room.panel.goalWaves": "Parallel goal work",
+  "room.panel.goalWavesHint": "Goals split work across teammates at the same time",
   "room.panel.status": "Team status",
   "room.panel.status.coordinating": "Coordinating",
   "room.panel.status.coordinatingTurn": "Coordinating {turn}/{max}",

@@ -221,6 +221,8 @@
   "server.rooms.becameBusy": "{bot} vừa bận ở một cuộc trò chuyện khác; đã bỏ qua lượt này",
   "server.rooms.mentionMissed": "{bot} không ở trong phòng này nên lời nhắc không đến được. Hãy thêm vào phòng để mời tham gia.",
   "server.rooms.sideReplyFailed": "{bot} chưa nhận được tin nhắn này: {reason}",
+  "room.panel.goalWaves": "Goal chạy song song",
+  "room.panel.goalWavesHint": "Goal chia việc cho nhiều bot làm cùng lúc",
   "goal.panel.activity": "Hoạt động của goal",
   "goal.panel.empty": "Chưa có hoạt động nào từ khi goal bắt đầu.",
   "goal.panel.open": "Xem chi tiết goal",

@@ -306,7 +306,6 @@ beforeAll(async () => {
       OMB_PORT: String(port),
       OMB_WEBHOOK_PORT: String(port + 1),
       OMB_STATIC_DIR: staticDir,
-      OMB_LEAD_DEPT_CAP: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -1363,5 +1362,17 @@ describe("goal-driven channel runs", () => {
       message.kind === "text" && message.role === "bot" && message.text === "Slow work finished."), { timeout: hostTimeout(15_000) }).toBe(true);
     const stopped = (await roomState())?.messages.filter((message: { tool?: { name?: string } }) => /Stopped|cancel/i.test(message.tool?.name ?? ""));
     expect(stopped).toEqual([]);
+  });
+
+  it("lets a room turn parallel goal waves off and on again", async () => {
+    const ids = [] as string[];
+    for (const name of ["Wave toggle A", "Wave toggle B", "Wave toggle C"]) {
+      ids.push((await api("POST", "/api/bots", { name, modelSelection: { instanceId: "chatFree", model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot.id);
+    }
+    const room = (await api("POST", "/api/groups", { name: "Wave toggle", memberIds: ids, setup: { bulletin: "", defaultResponder: { kind: "member", botId: ids[0] } } })).body.group;
+    expect(room.goalWaves).toBeUndefined();
+    expect((await api("PATCH", `/api/groups/${room.id}`, { goalWaves: false })).body.group.goalWaves).toBe(false);
+    expect((await api("PATCH", `/api/groups/${room.id}`, { goalWaves: "no" })).status).toBe(400);
+    expect((await api("PATCH", `/api/groups/${room.id}`, { goalWaves: true })).body.group.goalWaves).toBeUndefined();
   });
 });

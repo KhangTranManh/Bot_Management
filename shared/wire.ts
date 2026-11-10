@@ -842,6 +842,8 @@ export interface GroupTask {
 
 /** A room as a client may see it: the record plus the computed working flag. */
 export interface WireGroup {
+  /** False turns off parallel goal waves in this room; absent follows the member count (three or more). */
+  goalWaves?: boolean;
   /** Computed from the usage ledger, not stored in groups.json. */
   usage?: GroupThreadUsage | null;
   /** transient: each member's context in the active thread, from its last

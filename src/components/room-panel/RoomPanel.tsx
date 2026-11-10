@@ -14,10 +14,13 @@ import { ManageMembersPanel } from "../ManageMembersPanel";
 import { useBulletinEditor } from "../RoomBulletin";
 import { RoomMoreMenu } from "../RoomMoreMenu";
 import { RoomWorkingFolder, roomWorkingFolder } from "../RoomWorkingFolder";
-import { buttonCls, Card, ColRow, NavRow, PageHeader, roundButtonCls, rowCls, RowText } from "../bot-panel/rows";
+import { buttonCls, Card, ColRow, NavRow, PageHeader, roundButtonCls, rowCls, RowText, SwitchRow } from "../bot-panel/rows";
 import { sidePanelCls } from "../bot-panel/side-panel";
 import { ResponderPage } from "./ResponderPage";
 import { RoomStatus } from "./RoomStatus";
+
+/** Matches the server: goals plan parallel waves from three members. */
+const GOAL_WAVES_MIN_MEMBERS = 3;
 
 type RoomPage = "responder" | "folder";
 
@@ -115,7 +118,7 @@ function InstructionsRow({ group }: { group: Group }) {
 }
 
 export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: boolean }) {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const { dragProps } = useCaptionChrome();
   const [page, setPage] = useState<RoomPage | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -218,6 +221,16 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
                   value={String(members.length)}
                   onClick={() => setMembersOpen(true)}
                 />
+                {members.length >= GOAL_WAVES_MIN_MEMBERS && (
+                  <SwitchRow
+                    data-panel-row="goal-waves"
+                    title={t("room.panel.goalWaves")}
+                    hint={t("room.panel.goalWavesHint")}
+                    checked={group.goalWaves !== false}
+                    color={members[0]!.color}
+                    onChange={() => dispatch({ type: "patchGroup", groupId: group.id, patch: { goalWaves: group.goalWaves === false } })}
+                  />
+                )}
               </Card>
             </>
           ) : (
