@@ -10979,7 +10979,7 @@ function startRoomSideReply(
   for (const bot of targets) {
     try {
       const lane = roomJobs.openLane(room, threadId, bot.id, sender, text);
-      coordinator.enqueue({ groupId, threadId, botId: lead.id }, rootId, rootId, { botId: bot.id, threadId: lane.threadId }, brief, { mode: "work", thread: "new" });
+      coordinator.enqueue({ groupId, threadId, botId: lead.id }, rootId, rootId, { botId: bot.id, threadId: lane.threadId }, brief, { mode: "consult", thread: "new" });
     } catch (error) {
       store.appendMessage(threadId, {
         role: "bot", kind: "activity",

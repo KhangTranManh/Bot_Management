@@ -245,6 +245,17 @@ describe("RuntimeCoordinator: the requesting turn and its tree", () => {
     expect(w.coordinator.status(second.id)!.assignment).toMatchObject({ level: "auto", levelSource: "chief" });
   });
 
+  it("runs a consultation at Ask whatever the assignee's own or Chief level, and work at its own", () => {
+    const w = world(hold);
+    w.host.chiefs.add("chief-chat");
+    w.host.levelOf = () => ({ level: "full", chief: "full", driverKind: "claudeAgent" });
+    begun(w, chief, "gen-1");
+    const consulted = w.coordinator.enqueue(chief, "gen-1", undefined, builder, "What is left?", { mode: "consult" }).node;
+    const worked = w.coordinator.enqueue(chief, "gen-1", undefined, tester, "Run the tests", { mode: "work" }).node;
+    expect(w.coordinator.status(consulted.id)!.assignment).toMatchObject({ mode: "consult", level: "ask", levelSource: "own" });
+    expect(w.coordinator.status(worked.id)!.assignment).toMatchObject({ level: "full" });
+  });
+
   it("active() is all() without the ended nodes, with the same views", async () => {
     const w = world();
     const ended_ = new Set(["completed", "failed", "cancelled"]);

@@ -38,4 +38,5 @@ và cuối cùng chạy regression.
 
 | Bước | Trạng thái | Commit | Ghi chú |
 |---|---|---|---|
-| 1.1 | Xong | (commit này) | Side-reply mở rộng cho mọi lúc room bận, không chỉ goal. Gốc yêu cầu là thành viên rảnh. Stop vẫn dừng cả cây (có chủ đích, test `direct-coordination` khẳng định). |
+| 1.1 | Xong | b33a70e48 | Side-reply mở rộng cho mọi lúc room bận, không chỉ goal. Gốc yêu cầu là thành viên rảnh. Stop vẫn dừng cả cây (có chủ đích, test `direct-coordination` khẳng định). |
+| 1.2 | Xong | (commit này) | Lượt `consult` chạy ở mức `ask` (ghi/chạy lệnh phải xin phép); side-reply dùng `consult`. Tester cần chạy lệnh nên vẫn là `work`, Reviewer dùng `consult`. |

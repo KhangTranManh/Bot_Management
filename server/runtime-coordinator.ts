@@ -259,7 +259,9 @@ export class RuntimeCoordinator implements Coordinator {
     const reply: Reply = wanted === "none" ? "none" : root.reply === "poll" ? "poll" : wanted;
     const requester: Requester = { kind: "bot_turn", botId: parent.assignee.botId, threadId: parent.assignee.destination.threadId,
       chief: this.host.chiefOf(address(parent)), ...(parent.id === root.id && root.requester.runId !== undefined ? { runId: root.requester.runId } : {}) };
-    const level = this.host.levelOf(target, this.project(parent));
+    // A consultation answers a question: it runs at Ask whatever the assignee's own level, so any write or command
+    // waits for the person's approval.
+    const level = mode === "consult" ? { level: "ask" as const } : this.host.levelOf(target, this.project(parent));
     const result = this.runtime.enqueue({
       parentId: parent.id,
       origin: parent.origin,
