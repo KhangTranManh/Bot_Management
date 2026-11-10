@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TeamRole } from "../shared/team-roles.ts";
+import type { WritesSnapshot } from "./writes-audit.ts";
 import {
   GROUP_GOAL_CONTROL_CLOSE,
   GROUP_GOAL_CONTROL_OPEN,
@@ -180,8 +181,9 @@ function goalRun(options: {
   vendorOf?: (botId: string) => string | undefined;
   verify?: Array<{ id: string; command: string; expectExit?: number }>;
   runVerify?: (command: { id: string; command: string }) => Promise<{ id: string; exitCode: number | null; output: string }>;
-  snapshotWrites?: () => Promise<readonly string[] | undefined>;
-  writesOutside?: (before: readonly string[], declared: readonly string[]) => Promise<string[] | undefined>;
+  snapshotWrites?: () => Promise<WritesSnapshot | undefined>;
+  writesOutside?: (before: WritesSnapshot, declared: readonly string[]) => Promise<string[] | undefined>;
+  verifyRefusal?: string;
   dispatchWave?: (batch: Array<{ bot: { id: string; name: string }; role?: string; assignment: string }>) => Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepResult["outcome"]; stopReason?: string | null }>>;
 }) {
   const members = options.members ?? [{ id: "solo-id", name: "Solo" }];
@@ -200,6 +202,7 @@ function goalRun(options: {
     ...(options.vendorOf ? { vendorOf: options.vendorOf } : {}),
     ...(options.verify ? { verify: options.verify } : {}),
     ...(options.runVerify ? { runVerify: options.runVerify } : {}),
+    ...(options.verifyRefusal ? { verifyRefusal: options.verifyRefusal } : {}),
     ...(options.snapshotWrites ? { snapshotWrites: options.snapshotWrites } : {}),
     ...(options.writesOutside ? { writesOutside: options.writesOutside } : {}),
     ...(options.dispatchWave ? { dispatchWave: options.dispatchWave } : {}),
@@ -629,7 +632,7 @@ describe("a member that runs out of AI usage in a goal run", () => {
   });
 });
 
-describe("B0(ii) verify gate and B0(iv) tester writes", () => {
+describe("room verify checks and tester writes", () => {
   const planTask = (assignee: string, id = "t1", instruction = "Do it") => ({ id, assignee, instruction });
 
   it("the server runs the room's checks itself; a failing check turns the completion into a fix round", async () => {
@@ -655,6 +658,19 @@ describe("B0(ii) verify gate and B0(iv) tester writes", () => {
     expect(goal.run.turnCount).toBe(4);
     expect(goal.calls[3]!.instructions).toContain("The room's own checks failed");
     expect(goal.finished).toEqual([{ status: "needs-input", detail: "I need the failing test names." }]);
+  });
+
+  it("a room with checks but no folder to run them in blocks before any turn", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
+      verify: [{ id: "tests", command: "pnpm test" }],
+      verifyRefusal: "no working folder",
+      steps: [settled(envelope({ status: "completed", detail: "All good." }))],
+    });
+    await goal.done;
+    expect(goal.calls).toHaveLength(0);
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "no working folder" }]);
   });
 
   it("a passing check completes the run after the tester's word", async () => {
@@ -695,7 +711,7 @@ describe("B0(ii) verify gate and B0(iv) tester writes", () => {
       tasksAllowed: true,
       members: [{ id: "lead-id", name: "Lead" }, { id: "tester-id", name: "Tester" }],
       roles: { "tester-id": "tester" },
-      snapshotWrites: async () => [],
+      snapshotWrites: async () => new Map(),
       writesOutside: async () => ["src/tweaked.ts"],
       steps: [
         settled(envelope({ status: "continue", next: "Tester", instruction: "Test it", detail: "Testing" })),
@@ -714,7 +730,7 @@ describe("B0(ii) verify gate and B0(iv) tester writes", () => {
       tasksAllowed: true,
       members: [{ id: "lead-id", name: "Lead" }, { id: "tester-id", name: "Tester" }],
       roles: { "tester-id": "tester" },
-      snapshotWrites: async () => [],
+      snapshotWrites: async () => new Map(),
       writesOutside: async () => [],
       steps: [
         settled(envelope({ status: "continue", next: "Tester", instruction: "Test it", detail: "Testing" })),

@@ -1,5 +1,5 @@
 // Real server + injected MCP tools; only the provider's planning is scripted.
-// NOTE.md §1.1 / B0(i): a coordination node's recorded level is a hard ceiling — a consulted teammate
+// A coordination node's recorded level is a hard ceiling — a consulted teammate
 // runs at Ask even when its own grant is Full access, and the app never auto-approves above it.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

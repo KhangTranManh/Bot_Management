@@ -1,5 +1,5 @@
 // Real server + the fake engine's real shell: a worker writes actual files in the room folder, and the
-// wave's writes audit reports the ones outside its declared writes (B0(iii), detected after the fact).
+// wave's writes audit reports the ones outside its declared writes (detected after the fact).
 // The fake engine's scripted Bash runs under /bin/sh, so this file is POSIX-only.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";

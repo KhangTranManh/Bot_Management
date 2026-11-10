@@ -33,7 +33,7 @@ who checks, what happens when you interrupt, and how you see what everyone is do
 |---|---|
 | **Standing roles per room** | Give each member a role — **Lead**, **Worker**, **Tester** or **Reviewer** — from the room's *Team status*. The Lead coordinates every goal; it never takes a task itself. Roles live on the room, so one bot can be a Worker here and a Tester elsewhere. |
 | **Parallel waves by default** | In a room of three or more, the Lead plans tasks with dependencies and declared writes; independent tasks run side by side, each in its own lane thread. Tasks that touch the same files run one after another. A *Parallel goal work* switch turns it off per room. |
-| **Tester gate** | A plan with Worker tasks gets a Tester task that waits on them. The goal cannot complete until the Tester ends with `VERDICT: PASS`. A failure starts a fix round for the Worker who owns the file (at most three). |
+| **Tester gate** | A plan with Worker tasks gets a Tester task that waits on them. The goal cannot complete until the Tester ends with `VERDICT: PASS`. A failure starts a fix round for the Worker who owns the file (at most three). A room can also list its own check commands (`verify`, set through the API for now): the server runs them itself and the goal completes only when they exit as expected. A Tester that edits files outside its report has its PASS voided. |
 | **Plan checks** | A plan that hands work to the Lead, to a member without a role, or to a Worker without listing what it writes goes back to the Lead to fix. |
 | **Reviewers read only** | Review tasks run as consultations at the *Ask* level: any write or command waits for your approval. Hard-enforced with `OMB_ROLE_CEILING=1` (a consultation node's recorded level caps the turn and the app's auto-approvals); without the flag it relies on the model following its role. |
 | **Out of AI usage** | A member whose model hits its usage limit or runs out of credits leaves the run; the Lead is told to hand its task to a free member of the same role. Bots with a backup AI configured keep going on it, as before. |
@@ -56,8 +56,10 @@ who checks, what happens when you interrupt, and how you see what everyone is do
 
 ### Known limitations
 
-- Declared `writes` only order the plan's waves; writes outside the declared set are not detected yet.
-- PASS rests on the Tester's `VERDICT` line until verdicts are matched against executed-command evidence.
+- Writes outside a task's declared `writes` are reported after each wave in a git folder, not blocked; ignored
+  files are not seen.
+- Without `verify` commands, PASS rests on the Tester's `VERDICT` line. With them, the files those commands run
+  (tests, package scripts) can still be edited by the bots.
 - The role permission ceiling needs `OMB_ROLE_CEILING=1`; without it, consult-at-Ask relies on the model.
 - API keys are stored as plain text in `config.json` (inherited from upstream).
 - A local machine has no filesystem sandbox: out-of-bounds writes are detected after the fact at best.

@@ -25,7 +25,7 @@ export function teamPlanProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId
   return undefined;
 }
 
-/** Why a plan breaks the vendor rule (NOTE.md B4): a Reviewer's model vendor must differ from every Worker's
+/** Why a plan breaks the vendor rule: a Reviewer's model vendor must differ from every Worker's
  * in the same plan; "unknown" is never treated as different. */
 export function teamVendorProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId: string; name: string }>, roleOf: (botId: string) => TeamRole | undefined, vendorOf: (botId: string) => string | undefined): string | undefined {
   const workers = tasks.filter(({ botId }) => roleOf(botId) === "worker");

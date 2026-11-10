@@ -1,4 +1,4 @@
-// Real server: the room's verify commands run server-side (B0(ii)) — a passing check lets the goal
+// Real server: the room's verify commands run server-side — a passing check lets the goal
 // finish and its artifact appears in the room folder; a failing check burns the fix rounds to blocked.
 // The commands run under the platform shell via execFile(..., { shell: true }); these ones are POSIX.
 import { spawn, type ChildProcess } from "node:child_process";
