@@ -177,6 +177,11 @@ function goalRun(options: {
   members?: Array<{ id: string; name: string }>;
   steps: Array<GoalStepResult | ((call: number) => GoalStepResult)>;
   cancelAfter?: number;
+  vendorOf?: (botId: string) => string | undefined;
+  verify?: Array<{ id: string; command: string; expectExit?: number }>;
+  runVerify?: (command: { id: string; command: string }) => Promise<{ id: string; exitCode: number | null; output: string }>;
+  snapshotWrites?: () => Promise<readonly string[] | undefined>;
+  writesOutside?: (before: readonly string[], declared: readonly string[]) => Promise<string[] | undefined>;
   dispatchWave?: (batch: Array<{ bot: { id: string; name: string }; role?: string; assignment: string }>) => Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepResult["outcome"]; stopReason?: string | null }>>;
 }) {
   const members = options.members ?? [{ id: "solo-id", name: "Solo" }];
@@ -192,6 +197,11 @@ function goalRun(options: {
     solo: options.solo,
     tasksAllowed: options.tasksAllowed,
     ...(options.roles ? { roles: options.roles } : {}),
+    ...(options.vendorOf ? { vendorOf: options.vendorOf } : {}),
+    ...(options.verify ? { verify: options.verify } : {}),
+    ...(options.runVerify ? { runVerify: options.runVerify } : {}),
+    ...(options.snapshotWrites ? { snapshotWrites: options.snapshotWrites } : {}),
+    ...(options.writesOutside ? { writesOutside: options.writesOutside } : {}),
     ...(options.dispatchWave ? { dispatchWave: options.dispatchWave } : {}),
     cancelled: () => cancelled,
     current: (id) => members.find((member) => member.id === id),
@@ -616,5 +626,169 @@ describe("a member that runs out of AI usage in a goal run", () => {
     await goal.done;
     expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "maple-id", "maple-id"]);
     expect(goal.finished).toEqual([{ status: "failed", detail: expect.stringContaining("Maple could not return a result") }]);
+  });
+});
+
+describe("B0(ii) verify gate and B0(iv) tester writes", () => {
+  const planTask = (assignee: string, id = "t1", instruction = "Do it") => ({ id, assignee, instruction });
+
+  it("the server runs the room's checks itself; a failing check turns the completion into a fix round", async () => {
+    const runCommands: string[] = [];
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
+      verify: [{ id: "tests", command: "pnpm test", expectExit: 0 }],
+      runVerify: async (command) => {
+        runCommands.push(command.command);
+        return { id: command.id, exitCode: 1, output: "3 tests failed" };
+      },
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [planTask("Worker")] })),
+        settled("Done."),
+        settled(envelope({ status: "completed", detail: "All good." })),
+        settled(envelope({ status: "needs-input", detail: "I need the failing test names." })),
+      ],
+    });
+    await goal.done;
+    expect(runCommands).toEqual(["pnpm test"]);
+    expect(goal.calls).toHaveLength(4); // coordinator, worker, coordinator (verify fails), coordinator again
+    expect(goal.run.turnCount).toBe(4);
+    expect(goal.calls[3]!.instructions).toContain("The room's own checks failed");
+    expect(goal.finished).toEqual([{ status: "needs-input", detail: "I need the failing test names." }]);
+  });
+
+  it("a passing check completes the run after the tester's word", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
+      verify: [{ id: "build", command: "pnpm build" }],
+      runVerify: async (command) => ({ id: command.id, exitCode: 0, output: "" }),
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [planTask("Worker")] })),
+        settled("Done."),
+        settled(envelope({ status: "completed", detail: "All good." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "completed", detail: "All good." }]);
+  });
+
+  it("checks that keep failing after the fix-round cap block the run", async () => {
+    let rounds = 0;
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }],
+      verify: [{ id: "tests", command: "pnpm test" }],
+      runVerify: async (command) => {
+        rounds += 1;
+        return { id: command.id, exitCode: 1, output: `still failing ${rounds}` };
+      },
+      steps: Array.from({ length: 6 }, (_, index) => settled(envelope({ status: "completed", detail: `Attempt ${index}` }))),
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("kept failing after 3 fix rounds") }]);
+    expect(rounds).toBe(4);
+  });
+
+  it("a Tester that wrote files outside its report region has its PASS voided", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "tester-id", name: "Tester" }],
+      roles: { "tester-id": "tester" },
+      snapshotWrites: async () => [],
+      writesOutside: async () => ["src/tweaked.ts"],
+      steps: [
+        settled(envelope({ status: "continue", next: "Tester", instruction: "Test it", detail: "Testing" })),
+        settled("All good.\nVERDICT: PASS"),
+        settled(envelope({ status: "needs-input", detail: "I will fix the file the tester touched." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "needs-input", detail: "I will fix the file the tester touched." }]);
+    expect(goal.calls[2]!.instructions).toContain("changed files outside its report region");
+    expect(goal.calls[2]!.instructions).toContain("its PASS does not count");
+  });
+
+  it("a Tester whose writes stay in its report region keeps its PASS", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead-id", name: "Lead" }, { id: "tester-id", name: "Tester" }],
+      roles: { "tester-id": "tester" },
+      snapshotWrites: async () => [],
+      writesOutside: async () => [],
+      steps: [
+        settled(envelope({ status: "continue", next: "Tester", instruction: "Test it", detail: "Testing" })),
+        settled("All good.\nVERDICT: PASS"),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+  });
+
+  it("the vendor rule refuses a plan whose Reviewer shares a Worker's vendor", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [
+        { id: "lead-id", name: "Lead" },
+        { id: "worker-id", name: "Worker" },
+        { id: "reviewer-id", name: "Reviewer" },
+      ],
+      roles: { "worker-id": "worker", "reviewer-id": "reviewer" },
+      vendorOf: (botId) => (botId === "worker-id" ? "anthropic" : "anthropic"),
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Worker", instruction: "Build it", writes: ["page.tsx"] },
+          { id: "t2", assignee: "Reviewer", instruction: "Review it", dependsOn: ["t1"] },
+        ] })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("same model vendor (anthropic)") }]);
+  });
+
+  it("a Reviewer on another vendor passes the plan check", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [
+        { id: "lead-id", name: "Lead" },
+        { id: "worker-id", name: "Worker" },
+        { id: "reviewer-id", name: "Reviewer" },
+      ],
+      roles: { "worker-id": "worker", "reviewer-id": "reviewer" },
+      vendorOf: (botId) => (botId === "worker-id" ? "anthropic" : "openai"),
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Worker", instruction: "Build it", writes: ["page.tsx"] },
+          { id: "t2", assignee: "Reviewer", instruction: "Review it", dependsOn: ["t1"] },
+        ] })),
+        settled("Built."),
+        settled("Reviewed."),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+  });
+
+  it("an unknown vendor is refused, never guessed to be different", async () => {
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [
+        { id: "lead-id", name: "Lead" },
+        { id: "worker-id", name: "Worker" },
+        { id: "reviewer-id", name: "Reviewer" },
+      ],
+      roles: { "worker-id": "worker", "reviewer-id": "reviewer" },
+      vendorOf: (botId) => (botId === "worker-id" ? "anthropic" : "unknown"),
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Worker", instruction: "Build it", writes: ["page.tsx"] },
+          { id: "t2", assignee: "Reviewer", instruction: "Review it", dependsOn: ["t1"] },
+        ] })),
+      ],
+    });
+    await goal.done;
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("unknown model vendor") }]);
   });
 });

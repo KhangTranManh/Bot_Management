@@ -1,4 +1,5 @@
 // Import first: it reads a Cloud home's secrets off the launcher's pipe before any module can start a process.
+import { execFile } from "node:child_process";
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
 import { startFailureText } from "./start-failure-text.ts";
 import { reserveGmailDrafts } from "./gmail-draft-policy.ts";
@@ -234,6 +235,7 @@ import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
 import { gitStatusPorcelain, writesOutside } from "./writes-audit.ts";
+import { modelVendor } from "./model-vendor.ts";
 import { roomNow } from "./room-now.ts";
 import { looksLikeProgressQuestion } from "../shared/auto-goal.ts";
 import type { MemberNow } from "../shared/room-now.ts";
@@ -3728,6 +3730,36 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if (body.kind === null) patch.kind = undefined;
     else if (body.kind === "code" || body.kind === "research") patch.kind = body.kind;
     else throw Object.assign(new Error("kind must be code or research"), { status: 400 });
+  }
+  if (body.verify !== undefined) {
+    if (body.verify === null) patch.verify = undefined;
+    else {
+      if (!Array.isArray(body.verify) || body.verify.length === 0 || body.verify.length > 8) {
+        throw Object.assign(new Error("verify must be a list of 1 to 8 commands"), { status: 400 });
+      }
+      patch.verify = body.verify.map((entry: unknown) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw Object.assign(new Error("each verify entry must be an object"), { status: 400 });
+        const { id, command, cwd, timeoutSec, expectExit } = entry as Record<string, unknown>;
+        if (typeof id !== "string" || !id.trim() || id.length > 60) throw Object.assign(new Error("verify id must be 1-60 characters"), { status: 400 });
+        if (typeof command !== "string" || !command.trim() || command.length > 2_000) throw Object.assign(new Error("verify command must be 1-2000 characters"), { status: 400 });
+        if (cwd !== undefined && (typeof cwd !== "string" || cwd === "" || cwd.includes("..") || /[/\\]$/.test(cwd) || /^[/\\]|^[A-Za-z]:/.test(cwd))) {
+          throw Object.assign(new Error("verify cwd must be a relative subfolder of the room's working folder"), { status: 400 });
+        }
+        if (timeoutSec !== undefined && (typeof timeoutSec !== "number" || !Number.isFinite(timeoutSec) || timeoutSec < 1 || timeoutSec > 3_600)) {
+          throw Object.assign(new Error("verify timeoutSec must be between 1 and 3600"), { status: 400 });
+        }
+        if (expectExit !== undefined && (typeof expectExit !== "number" || !Number.isInteger(expectExit))) {
+          throw Object.assign(new Error("verify expectExit must be an integer"), { status: 400 });
+        }
+        return {
+          id: id.trim(),
+          command: command.trim(),
+          ...(cwd !== undefined ? { cwd } : {}),
+          ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+          ...(expectExit !== undefined ? { expectExit } : {}),
+        };
+      });
+    }
   }
   if (Object.prototype.hasOwnProperty.call(body, "turnTimeoutMinutes")) {
     if (!existing.dm) {
@@ -10966,6 +10998,25 @@ async function runGroupGoalOperation(args: {
       if (!cwd) return undefined;
       const after = await gitStatusPorcelain(cwd);
       return after ? writesOutside(before, after, declared) : undefined;
+    },
+    ...(room && !room.dm && room.verify?.length ? { verify: room.verify } : {}),
+    runVerify: async (command) => {
+      const roomCwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
+      const cwd = command.cwd ? join(roomCwd ?? process.cwd(), command.cwd) : roomCwd;
+      return await new Promise((resolve) => {
+        execFile(command.command, {
+          cwd: cwd ?? process.cwd(), shell: true, windowsHide: true,
+          timeout: (command.timeoutSec ?? 600) * 1_000, maxBuffer: 16 * 1024 * 1024,
+        }, (err, stdout, stderr) => resolve({
+          id: command.id,
+          exitCode: err && typeof (err as NodeJS.ErrnoException & { code?: number | string }).code === "number" ? (err as { code: number }).code : err ? null : 0,
+          output: `${stdout ?? ""}${stderr ?? ""}`.slice(-2_000),
+        }));
+      });
+    },
+    vendorOf: (botId) => {
+      const bot = store.bot(botId);
+      return bot ? modelVendor(registry.cliTarget(bot.modelSelection.instanceId)?.driverKind, bot.modelSelection.model) : undefined;
     },
     finish: (status, detail, text) => finishGroupGoalRun(args.groupId, args.operation, status, detail, text),
     progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),

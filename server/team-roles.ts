@@ -1,5 +1,6 @@
 import type { TeamRole } from "../shared/team-roles.ts";
 import type { LeadTaskPlan } from "./lead-schedule.ts";
+import { UNKNOWN_VENDOR } from "./model-vendor.ts";
 
 /** A Tester's reply ends with this line; the last one counts. */
 const VERDICT = /VERDICT:\s*(PASS|FAIL)\b/gi;
@@ -20,6 +21,24 @@ export function teamPlanProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId
     const role = roleOf(botId);
     if (role === undefined || role === "lead") return `task ${plan.id} goes to ${name}, who is ${role === "lead" ? "the Lead" : "not given a team role"}; give tasks only to Workers, Testers and Reviewers`;
     if (role === "worker" && !plan.writes?.length) return `task ${plan.id} for Worker ${name} declares no writes; list the files or artifacts it changes`;
+  }
+  return undefined;
+}
+
+/** Why a plan breaks the vendor rule (NOTE.md B4): a Reviewer's model vendor must differ from every Worker's
+ * in the same plan; "unknown" is never treated as different. */
+export function teamVendorProblem(tasks: ReadonlyArray<{ plan: LeadTaskPlan; botId: string; name: string }>, roleOf: (botId: string) => TeamRole | undefined, vendorOf: (botId: string) => string | undefined): string | undefined {
+  const workers = tasks.filter(({ botId }) => roleOf(botId) === "worker");
+  for (const { plan, botId, name } of tasks) {
+    if (roleOf(botId) !== "reviewer") continue;
+    const reviewerVendor = vendorOf(botId);
+    for (const worker of workers) {
+      const workerVendor = vendorOf(worker.botId);
+      if (reviewerVendor === undefined || workerVendor === undefined || reviewerVendor === UNKNOWN_VENDOR || workerVendor === UNKNOWN_VENDOR) {
+        return `task ${plan.id} for Reviewer ${name} runs on an unknown model vendor; pick engines whose vendor is known so the reviewer differs from the Workers`;
+      }
+      if (reviewerVendor === workerVendor) return `task ${plan.id} for Reviewer ${name} runs on the same model vendor (${reviewerVendor}) as Worker ${worker.name}; a reviewer must run a different vendor than the work it reviews`;
+    }
   }
   return undefined;
 }

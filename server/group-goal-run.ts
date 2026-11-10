@@ -2,9 +2,10 @@ import type { ServerText } from "../shared/server-text.ts";
 import { noticeFailure } from "./chat-notices.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { GroupDefaultResponder } from "./store.ts";
+import type { VerifyCommand } from "../shared/wire.ts";
 import { LEAD_MAX_WAVE_SIZE, leadBallotFromPlan, leadBatchesForWave, leadWaves, type LeadTaskPlan } from "./lead-schedule.ts";
 import type { TeamRole } from "../shared/team-roles.ts";
-import { TEAM_MAX_FIX_ROUNDS, teamPlanProblem, teamRoleRule, testerVerdict, withTesterTask } from "./team-roles.ts";
+import { TEAM_MAX_FIX_ROUNDS, teamPlanProblem, teamRoleRule, teamVendorProblem, testerVerdict, withTesterTask } from "./team-roles.ts";
 import { engineFailureKind } from "./drivers/engine-errors.ts";
 
 // Odd so the final bounded turn always falls to the coordinator for the completion decision.
@@ -272,6 +273,12 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   snapshotWrites?(): Promise<readonly string[] | undefined>;
   /** Paths changed since the snapshot that no task in the batch declared. */
   writesOutside?(before: readonly string[], declared: readonly string[]): Promise<string[] | undefined>;
+  /** Completion checks the room owns; the server runs them itself after the Tester passes (NOTE.md B0(ii)). */
+  verify?: ReadonlyArray<VerifyCommand>;
+  /** Runs one check and reports its real exit code; the run never trusts a bot's own account of it. */
+  runVerify?(command: VerifyCommand): Promise<{ id: string; exitCode: number | null; output: string }>;
+  /** The upstream model vendor a member runs on; undefined or "unknown" never counts as different (B4). */
+  vendorOf?(botId: string): string | undefined;
   /** One member turn; a step counts against the run's turns once its member is claimed. A `lane` thread lets
    * wave tasks run beside each other, one provider turn per thread. */
   step(bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult>;
@@ -351,19 +358,22 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
     return undefined;
   };
   /** Folds one settled member result into the Tester gate; a reason means the run stops there. */
-  const settle = (bot: Bot, replyText: string): string | undefined => {
+  const settle = (bot: Bot, replyText: string, outsideWrites?: readonly string[]): string | undefined => {
     const role = roleOf(bot.id);
     if (role === "worker") team.untested = true;
     if (role !== "tester") return undefined;
     const verdict = testerVerdict(replyText);
-    if (verdict === "pass") {
+    if (verdict === "pass" && !outsideWrites?.length) {
       team.untested = false;
       return undefined;
     }
     team.fixRounds += 1;
     if (team.fixRounds > TEAM_MAX_FIX_ROUNDS) return `The Tester still failed the work after ${TEAM_MAX_FIX_ROUNDS} fix rounds.`;
-    coordinatorNote = `${bot.name} (Tester) reported ${verdict === "fail" ? "FAIL" : "no verdict"}: ${replyText.replace(/\s+/g, " ").trim().slice(-400)}. ` +
-      "Give each fix to the worker who owns that file, then have the tester run again.";
+    if (outsideWrites?.length) team.untested = true; // A voided PASS means the latest changes are still unapproved.
+    const reason = outsideWrites?.length
+      ? `${bot.name} (Tester) changed files outside its report region (${outsideWrites.slice(0, 5).join(", ")}): its PASS does not count. `
+      : `${bot.name} (Tester) reported ${verdict === "fail" ? "FAIL" : "no verdict"}: ${replyText.replace(/\s+/g, " ").trim().slice(-400)}. `;
+    coordinatorNote = `${reason}Give each fix to the worker who owns that file, then have the tester run again.`;
     return undefined;
   };
   while (!deps.cancelled() && run.turnCount < run.maxTurns) {
@@ -424,6 +434,26 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       coordinatorNote = "Not done yet: the latest changes have not passed the tester. Plan a tester task, or fix what the tester reported.";
       continue;
     }
+    if (decision.status === "completed" && deps.verify?.length) {
+      // B0(ii): the server runs the room's own checks; the Tester's word alone never completes the goal.
+      const failures: string[] = [];
+      for (const command of deps.verify) {
+        if (deps.cancelled()) return;
+        const result = deps.runVerify ? await deps.runVerify(command) : { id: command.id, exitCode: null as number | null, output: "" };
+        if (result.exitCode !== (command.expectExit ?? 0)) {
+          failures.push(`${command.id} exited ${result.exitCode ?? "killed"} (expected ${command.expectExit ?? 0}): ${result.output.replace(/\s+/g, " ").trim().slice(-200)}`);
+        }
+      }
+      if (failures.length) {
+        team.fixRounds += 1;
+        if (team.fixRounds > TEAM_MAX_FIX_ROUNDS) {
+          deps.finish("blocked", `The room's own checks kept failing after ${TEAM_MAX_FIX_ROUNDS} fix rounds — ${failures.join("; ")}.`);
+          return;
+        }
+        coordinatorNote = `The room's own checks failed: ${failures.join("; ")}. Fix what they report, then have the tester run again.`;
+        continue;
+      }
+    }
     if (decision.status !== "continue") {
       deps.finish(decision.status, decision.detail);
       return;
@@ -447,7 +477,9 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       const outTask = planned.find(({ bot }) => outOfRun.has(bot.id));
       const problem = outTask
         ? `task ${outTask.plan.id} goes to ${outTask.bot.name}, whose AI ran out of usage in this run`
-        : roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf) : undefined;
+        : roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf)
+          ?? (deps.vendorOf ? teamVendorProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf, deps.vendorOf) : undefined)
+        : undefined;
       if (problem) {
         team.planRefusals += 1;
         if (team.planRefusals >= 3) {
@@ -513,11 +545,12 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
           // Runtime-dispatched children never claim through onClaimed; a parallel batch is one team turn, however many ran.
           if (deps.dispatchWave && !deps.solo && results.some(({ result }) => result.ran)) run.turnCount += 1;
           if (deps.cancelled()) return;
+          let outsideWrites: string[] | undefined;
           if (writesBefore && deps.writesOutside) {
-            const outside = await deps.writesOutside(writesBefore, declared);
-            if (outside?.length) {
+            outsideWrites = (await deps.writesOutside(writesBefore, declared)) ?? undefined;
+            if (outsideWrites?.length) {
               const who = [...new Set(results.filter(({ result }) => result.ran).map(({ entry }) => entry.bot.name))].join(", ");
-              deps.note(`${who} changed files outside their declared writes: ${outside.slice(0, 5).join(", ")}${outside.length > 5 ? ` (+${outside.length - 5} more)` : ""}`);
+              deps.note(`${who} changed files outside their declared writes: ${outsideWrites.slice(0, 5).join(", ")}${outsideWrites.length > 5 ? ` (+${outsideWrites.length - 5} more)` : ""}`);
             }
           }
           for (const { entry, result } of results) {
@@ -554,7 +587,11 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
               deps.finish("failed", `${entry.bot.name} could not return a result to ${coordinator.name}${reason ? ` — ${reason}` : ""}.`);
               return;
             } else {
-              const stop = settle(entry.bot, result.replyText);
+              // B0(iv): a Tester that wrote outside its report region has its PASS voided, whatever it said.
+              const stop = settle(entry.bot, result.replyText,
+                outsideWrites?.length && roleOf(entry.bot.id) === "tester" && result.outcome === "settled" && testerVerdict(result.replyText) === "pass"
+                  ? outsideWrites
+                  : undefined);
               if (stop) {
                 deps.finish("blocked", stop);
                 return;
@@ -594,6 +631,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
     }
 
     const workerTurn = run.turnCount + 1;
+    const testerBefore = roleOf(workerBot.id) === "tester" && deps.snapshotWrites ? await deps.snapshotWrites() : undefined;
     const workerResult = await stepOnceRetried(deps, workerBot, false, groupGoalWorkerInstructions({
       goal: run.goal,
       coordinatorName: coordinator.name,
@@ -638,7 +676,15 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       deps.finish("failed", `${workerBot.name} could not return a result to ${coordinator.name}${reason ? ` — ${reason}` : ""}.`);
       return;
     }
-    const stop = settle(workerBot, workerResult.replyText);
+    let outsideWrites: string[] | undefined;
+    if (testerBefore && deps.writesOutside) {
+      outsideWrites = (await deps.writesOutside(testerBefore, [])) ?? undefined;
+      if (outsideWrites?.length) {
+        deps.note(`${workerBot.name} changed files outside its report region: ${outsideWrites.slice(0, 5).join(", ")}${outsideWrites.length > 5 ? ` (+${outsideWrites.length - 5} more)` : ""}`);
+      }
+    }
+    const stop = settle(workerBot, workerResult.replyText,
+      outsideWrites?.length && testerVerdict(workerResult.replyText) === "pass" ? outsideWrites : undefined);
     if (stop) {
       deps.finish("blocked", stop);
       return;

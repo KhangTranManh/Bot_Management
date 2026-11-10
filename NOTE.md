@@ -94,14 +94,14 @@ trong file goal của từng project.
 
 | Mục | Thêm được | Mức cao nhất | Công | Ghi chú |
 |---|---|---|---|---|
-| B0(i) trần quyền theo vai | Có | CỨNG | Vừa | Áp ở dispatch (`:8468-8469`) **và** tự duyệt hộ (`:9634`). Có danh sách lệnh đọc/test được phép (cơ chế allowlist sẵn có, `docs/verification/command-allowlist.md`). |
-| B0(ii) PASS cần bằng chứng | Có | CỨNG (cho việc tính PASS) | Vừa | **Sửa giả định:** `doneWhen` là văn xuôi do Lead viết (`server/runtime/types.ts`, "the requester's own completion criterion"), không phải lệnh. Cần trường lệnh có cấu trúc và nguồn lệnh không do Lead tự đặt — xem §8.3. |
-| B0(iii) file ngoài `writes` | **Xong** (`writes-audit.ts`, git porcelain trước/sau mỗi batch wave, activity row PHÁT HIỆN SAU) | PHÁT HIỆN SAU | Vừa | Non-git → im lặng; file bẩn trước wave không báo được; chưa hủy PASS (B0(iv) nối). |
-| B0(iv) vùng ghi Tester | Có | PHÁT HIỆN SAU + trần `edits` | Nhỏ | Dùng lại (iii). |
-| B1 kind code/research | Có | CỨNG | Nhỏ | Trường mới trong `WireGroup`. |
+| B0(i) trần quyền theo vai | **Xong** (`c65af79db`, flag `OMB_ROLE_CEILING=1`) | CỨNG | Vừa | 4 điểm gắn: dispatch + `approvalModeNow` + just-do-it, room, tự duyệt `request.opened`, `sourceApprovalMode`. |
+| B0(ii) PASS cần bằng chứng | **Xong** (`verify` room setting, `server/index.ts` `runVerify`) | CỨNG (T2, theo §8.1) | Vừa | Server tự chạy `verify` (execFile shell, cwd room) sau khi Tester PASS; PASS cuối = VERDICT ∧ mọi exit đúng `expectExit`; lệch → vòng sửa, quá 3 → `blocked`. |
+| B0(iii) file ngoài `writes` | **Xong** (`writes-audit.ts`, git porcelain trước/sau mỗi batch wave, activity row PHÁT HIỆN SAU) | PHÁT HIỆN SAU | Vừa | Non-git → im lặng; file bẩn trước wave không báo được; B0(iv) đã nối hủy PASS. |
+| B0(iv) vùng ghi Tester | **Xong** (batch/single audit quanh turn Tester; PASS ngoài vùng báo cáo → void + vòng sửa) | PHÁT HIỆN SAU + void PASS | Nhỏ | Vùng báo cáo = `writes` của task Tester (task Tester tự tạo khai none → mọi ghi đều void). Trần `edits` chưa làm (mức bot cấu hình được ngay — §6.2 điểm 5). |
+| B1 kind code/research | **Xong** (`2efcebda2`, e2e `room-kind`) | CỨNG | Nhỏ | Chưa có gì đọc nó — các luật §8.2 nối dần. |
 | B2 file goal (zod) | Có | CỨNG (định dạng, khoá hash khi duyệt) | Vừa | |
-| B3 Evaluator + tập khoá | Có | PHÁT HIỆN SAU (quét log tìm đường dẫn) | Vừa | Chặn cứng tự nhiên nếu tập khoá nằm trên máy GPU. |
-| B4 ràng buộc vendor | Có | CỨNG (trả kế hoạch) | Nhỏ | Kiểm lại khi đổi engine do hết quota; không đạt thì `blocked`. |
+| B3 Evaluator + tập khoá | Có | PHÁT HIỆN SAU (quét log tìm đường dẫn) | Vừa | Chỉ chống T1; T2 cần tách vật lý máy GPU (§8.1). |
+| B4 ràng buộc vendor | **Xong** (`model-vendor.ts` + `teamVendorProblem` trong plan check) | CỨNG (trả kế hoạch) | Nhỏ | Reviewer ≠ vendor mọi Worker trong plan; `unknown` bị trả (không đoán); re-check tự nhiên qua `vendorOf` đọc bot live mỗi lần duyệt plan (backup AI đổi vendor sẽ bị bắt). |
 | B5 locks | Đã có | CỨNG trong một goal | — | Khoá xuyên room chỉ cần khi nhiều room dùng chung máy GPU. |
 | B6 pilot gate | Có | CỨNG (plan check) | Nhỏ | |
 | B7 ledger + guard ngân sách | Có | CỨNG nếu server tự chạy guard | Vừa | |
@@ -119,10 +119,10 @@ trong file goal của từng project.
 
 ### 3.4 Thứ tự đề xuất (rẻ và an toàn trước)
 1. ~~B0(i) — sửa luôn lỗi mục 1.1~~ **xong** (`c65af79db`).
-2. ~~B12–B13~~ **xong** (2026-11-10); kèm **B1** xong: `WireGroup.kind` ("code" | "research"), PATCH `/api/groups/:id`, e2e `room-kind`.
-3. Chốt §8 (mối đe doạ, nghĩa của `kind`, trường `verify`) — tài liệu, trước khi code tiếp.
-4. ~~B0(iii) (vì §1.3)~~ **xong** (`writes-audit`, báo cáo sau wave); kế tiếp: B0(ii) theo §8.3, B0(iv), B4.
-5. B2, B8, B11, B7, rồi B3, B6, B9.
+2. ~~B12–B13~~ **xong** (2026-11-10); kèm **B1** xong (`2efcebda2`).
+3. ~~Chốt §8~~ **xong** (4 quyết định ghi ở §8.10).
+4. ~~B0(iii), B0(ii) theo §8.3, B0(iv), B4~~ **xong** (2026-11-11, xem §9).
+5. Kế tiếp: B2, B8, B11, B7, rồi B3, B6, B9.
 6. B10 song song (phần lớn ở phía máy GPU).
 
 B0(i) và B1 code trước khi chốt đặc tả §6 là ngoại lệ có chủ đích: dùng chung cho room code, không phụ thuộc
@@ -327,3 +327,22 @@ Cần có trong mẫu file goal (B2), khoá cùng hash:
 3. ~~§8.3 (ai chạy)~~: **server tự chạy** `verify`; (nguồn lệnh) **room `code` = cài đặt room do bạn đặt**, room research = file goal đã khoá.
 4. §8.6: hai goal cùng lúc trong một room — còn mở.
 5. Sáu điểm §6.4 vẫn còn mở.
+
+## 9. Đã hoàn thành và kết quả test (cập nhật 2026-11-11)
+
+Tất cả chạy trên engine giả, fixture cách ly theo `docs/verification/README.md`; chưa kiểm với model thật.
+
+| Mục | Commit | Nội dung | Test |
+|---|---|---|---|
+| B0(i) trần quyền theo vai | `c65af79db` | `HandoffView.level` + `approvalModeUnderCeiling` (chỉ hạ, custom giữ mức riêng, đi xuống mức engine chạy được); gắn 4 chỗ; flag `OMB_ROLE_CEILING=1`, tắt = như cũ | Unit bảng cap; e2e `role-ceiling` 3/3: consult bot `full` → `default` khi ON / `bypassPermissions` khi OFF; Chief lift vẫn nâng khi ON |
+| B12–B13 | `2efcebda2` | README: "Reviewers read only" ghi đúng cơ chế; Stop dừng cả cây; mục **Known limitations** | — |
+| B1 room `kind` | `2efcebda2` | `WireGroup.kind` ("code" \| "research"), PATCH `/api/groups/:id`, null clear, giá trị lạ → 400; chưa có gì đọc | e2e `room-kind`: round-trip + từ chối |
+| Gỡ file lạ | `222785ec0` | `..dist/` + `test-server-data/` khỏi tracking, ignore (blob vẫn còn trong lịch sử đã push) | — |
+| B0(iii) audit `writes` | `35d5f0f23` | `writes-audit.ts`: `gitStatusPorcelain` + `writesOutside` (thuần, xử lý rename); chạy quanh mỗi batch wave; activity row `ok:false` | Unit 6/6 (gồm git thật trên Windows); e2e `writes-audit` POSIX-gated (worker Bash thật ghi stray) — chạy trên CI Linux, Windows skip |
+| B0(ii) `verify` | commit lần này | `WireGroup.verify` (`{id, command, cwd?, timeoutSec?, expectExit?}`, tối đa 8, cwd chỉ subfolder tương đối); PATCH lưu; **server tự chạy** (`execFile shell`, cwd = thư mục room) sau khi Tester PASS; PASS cuối = `VERDICT: PASS` ∧ mọi verify đúng exit; lệch → vòng sửa (cap 3 → `blocked`) | Unit: fail → fix round (`needs-input` kèm note); pass → completed; 4 lần fail → `blocked` "kept failing after 3 fix rounds"; e2e `verify-gate` POSIX-gated (artifact `verify-ran.txt` do server ghi trong workspace là bằng chứng) |
+| B0(iv) vùng ghi Tester | commit lần này | Audit quanh turn Tester (batch và single): Tester PASS nhưng ghi ngoài vùng báo cáo (task Tester khai `writes`) → **PASS void** + `team.untested = true` + vòng sửa | Unit: void → completed bị chặn (early-completion guard) kèm note "its PASS does not count"; writes trong vùng → PASS giữ nguyên |
+| B4 vendor | commit lần này | `model-vendor.ts`: bảng driver→vendor + parse `provider/model` (và `provider\model` của ZCode); `teamVendorProblem` trong plan check: Reviewer ≠ vendor mọi Worker trong plan; `unknown` → trả kế hoạch (không đoán); re-check tự nhiên qua `vendorOf` đọc bot live mỗi lần duyệt plan | Unit: cùng vendor → `blocked` "same model vendor"; khác vendor → completed; unknown → `blocked` "unknown model vendor"; `claudeAgent` có model id lạ vẫn `anthropic` |
+
+**Kết quả test 2026-11-11:** unit 9 file liên quan — **109/109 qua**; e2e regression goal + quyền (`group-goal-run`, `group-goal-wait-cap`, `role-ceiling`, `room-kind`) — **27/27 qua**; typecheck `tsconfig.server.json` sạch. E2E POSIX-gated (`writes-audit`, `verify-gate`) skip trên Windows cục bộ, chờ CI Linux chạy thật.
+
+**Còn mở:** B2, B8, B11, B7 → B3, B6, B9 (theo §3.4); §8.6 (hai goal cùng room); 6 điểm §6.4 (spec workflow); trần `edits` cho Tester là cấu hình mức bot (§6.2 điểm 5).

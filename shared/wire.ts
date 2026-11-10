@@ -841,6 +841,21 @@ export interface GroupTask {
   busyBotId?: string | null;
 }
 
+/** One completion check the server itself runs after a goal's Tester passes (NOTE.md §8.3): the bot never
+ * chooses or sees the verdict of these, so a PASS is backed by a real exit code. */
+export interface VerifyCommand {
+  /** Stable id, named in reports. */
+  id: string;
+  /** The shell command line, run in the room's working folder (or `cwd` under it). */
+  command: string;
+  /** A relative subfolder of the room's working folder; ".." and absolute paths are refused. */
+  cwd?: string;
+  /** Seconds before the command is killed; default 600. */
+  timeoutSec?: number;
+  /** The exit code that counts as passed; default 0. */
+  expectExit?: number;
+}
+
 /** A room as a client may see it: the record plus the computed working flag. */
 export interface WireGroup {
   /** False turns off parallel goal waves in this room; absent follows the member count (three or more). */
@@ -849,6 +864,8 @@ export interface WireGroup {
   roles?: Record<string, TeamRole>;
   /** What the room is for: absent is an ordinary chat room; "code" and "research" gate their workflows. */
   kind?: "code" | "research";
+  /** Completion checks the server runs itself before a goal may finish; absent runs none. */
+  verify?: VerifyCommand[];
   /** Run a person's work request as a goal; absent means on once the room has a lead. */
   autoGoal?: boolean;
   /** Computed from the usage ledger, not stored in groups.json. */
