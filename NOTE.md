@@ -18,19 +18,30 @@ Nhãn: **CỨNG** = server chặn thật; **MỀM** = nằm trong prompt/playboo
   room `roomTurnApprovalMode` (`:3121`, cap sau lift Chief), tự duyệt `request.opened` (`:6516`) và
   `sourceApprovalMode` (`:3093`, qua `coordinator.runningIn`). Flag off = hành vi cũ.
 - E2E: `server/role-ceiling.e2e.test.ts` — consult bot `full` chạy `default` khi ON / `bypassPermissions`
-  khi OFF; Chief lift vẫn nâng bot Ask khi ON. README "Reviewers read only" đúng sau khi bật flag (B13 còn đợi).
+  khi OFF; Chief lift vẫn nâng bot Ask khi ON. README "Reviewers read only" đã ghi đúng (B13 xong).
 
-### 1.2 Repo có file không nên commit (commit `0b987b228` "d", chưa push)
-- `..dist/` (278 file build, ~25 MB) và `test-server-data/` (29 file: `bots.json`, `messages.db`, `runtime.db`,
-  `sessions.json.open`… dữ liệu chạy thử; chưa kiểm chứng có chứa tin nhắn hay phiên đăng nhập thật không).
-- `main` đang đi trước `origin/main`; chưa push nên còn gỡ sạch khỏi lịch sử được.
-- Chờ quyết: (1) `git rm --cached` + `.gitignore`; (2) viết lại commit `d`; (3) xoá `..dist/` trên máy.
-- `pnpm lint` (lint cả `.`) đang fail vì `..dist/`; lint mã nguồn (`src server shared scripts electron`) sạch.
+### 1.2 Repo có file không nên commit — ĐÃ XỬ LÝ (`222785ec0`)
+- `..dist/` và `test-server-data/` đã gỡ khỏi tracking, có trong `.gitignore`; `pnpm lint` sạch.
+- Commit `d` (`18c1530db`) vẫn nằm trong lịch sử đã push; chưa kiểm chứng `test-server-data/` có chứa tin nhắn hay
+  phiên đăng nhập thật không. Nếu có: phải viết lại lịch sử, không chỉ gỡ tracking.
+
+### 1.3 Sóng song song có thể ghi đè nhau mà không ai biết — ĐÃ BÁO ĐƯỢC (B0(iii), 2026-11-10)
+- Ba điều cùng đúng: sóng song song **bật mặc định** (room 3+), mọi worker **chung một thư mục** (A3),
+  `writes` **không được kiểm** (B0(iii) chưa làm).
+- Hệ quả: hai Worker cùng sóng khai `writes` khác nhau nhưng thực tế sửa cùng file → bản sau đè bản trước,
+  Tester có thể PASS trên bản đã đè. Rủi ro của tính năng đang chạy, không riêng `/research`.
+- **Đã làm B0(iii):** sau mỗi batch wave, `git status --porcelain` trước/sau thư mục room
+  (`server/writes-audit.ts`); file đổi ngoài `writes` khai → activity row `ok:false` từ coordinator
+  (`<bots> changed files outside their declared writes: …`), không chặn. Non-git/không cwd → audit im lặng.
+  Hạn chế còn lại: file **đã bẩn trước wave** mà sửa tiếp không báo được (porcelain không phân biệt) —
+  hướng under-report, chấp nhận; room research cần chặt hơn thì đợi B0(iii)+hash hoặc tách worktree.
+- Phát hiện hiện là **báo cáo**, chưa hủy PASS của Tester — B0(iv) sẽ nối `settle` với audit này.
 
 ## 2. Việc dở dang
 
-- **Stash `stash@{0}`** "WIP: room now waiting + Open to review": `/now` trả cờ "đang chờ duyệt", Team status
-  có nút "Mở để duyệt" mở thẳng lane. Chưa type-check, chưa test. Lấy lại: `git stash pop`.
+- **Stash "WIP: room now waiting + Open to review" đã mất**: `/now` trả cờ "đang chờ duyệt", Team status có nút
+  "Mở để duyệt" mở thẳng lane. Ngày 2026-11-10 `git stash list` trống, không có commit treo nào khớp, mã nguồn
+  không có chuỗi này. Muốn có thì làm lại từ đầu.
 - **UI còn thiếu** (đã đánh giá, chưa làm):
   1. Bảng kế hoạch trong panel goal (task, người làm, trạng thái, phụ thuộc).
   2. Hiện cổng Tester trên card goal ("Tester: FAIL · vòng sửa 1/3").
@@ -84,8 +95,8 @@ trong file goal của từng project.
 | Mục | Thêm được | Mức cao nhất | Công | Ghi chú |
 |---|---|---|---|---|
 | B0(i) trần quyền theo vai | Có | CỨNG | Vừa | Áp ở dispatch (`:8468-8469`) **và** tự duyệt hộ (`:9634`). Có danh sách lệnh đọc/test được phép (cơ chế allowlist sẵn có, `docs/verification/command-allowlist.md`). |
-| B0(ii) PASS cần bằng chứng | Có | CỨNG (cho việc tính PASS) | Vừa | Khớp lệnh `doneWhen` với `item.started`/`item.completed ok`. Bù hạn chế: lệnh chấm điểm tự ghi file kết quả kèm mã thoát. |
-| B0(iii) file ngoài `writes` | Có | PHÁT HIỆN SAU | Vừa | Hash trước/sau mỗi đợt, hoặc `git status` nếu là repo git. Song song chỉ quy cho cả đợt; thư mục riêng mỗi lane (git worktree) tốn công gộp. |
+| B0(ii) PASS cần bằng chứng | Có | CỨNG (cho việc tính PASS) | Vừa | **Sửa giả định:** `doneWhen` là văn xuôi do Lead viết (`server/runtime/types.ts`, "the requester's own completion criterion"), không phải lệnh. Cần trường lệnh có cấu trúc và nguồn lệnh không do Lead tự đặt — xem §8.3. |
+| B0(iii) file ngoài `writes` | **Xong** (`writes-audit.ts`, git porcelain trước/sau mỗi batch wave, activity row PHÁT HIỆN SAU) | PHÁT HIỆN SAU | Vừa | Non-git → im lặng; file bẩn trước wave không báo được; chưa hủy PASS (B0(iv) nối). |
 | B0(iv) vùng ghi Tester | Có | PHÁT HIỆN SAU + trần `edits` | Nhỏ | Dùng lại (iii). |
 | B1 kind code/research | Có | CỨNG | Nhỏ | Trường mới trong `WireGroup`. |
 | B2 file goal (zod) | Có | CỨNG (định dạng, khoá hash khi duyệt) | Vừa | |
@@ -109,9 +120,13 @@ trong file goal của từng project.
 ### 3.4 Thứ tự đề xuất (rẻ và an toàn trước)
 1. ~~B0(i) — sửa luôn lỗi mục 1.1~~ **xong** (`c65af79db`).
 2. ~~B12–B13~~ **xong** (2026-11-10); kèm **B1** xong: `WireGroup.kind` ("code" | "research"), PATCH `/api/groups/:id`, e2e `room-kind`.
-3. B0(ii)–(iv), B4.
-4. B2, B8, B11, B7, rồi B3, B6, B9.
-5. B10 song song (phần lớn ở phía máy GPU).
+3. Chốt §8 (mối đe doạ, nghĩa của `kind`, trường `verify`) — tài liệu, trước khi code tiếp.
+4. ~~B0(iii) (vì §1.3)~~ **xong** (`writes-audit`, báo cáo sau wave); kế tiếp: B0(ii) theo §8.3, B0(iv), B4.
+5. B2, B8, B11, B7, rồi B3, B6, B9.
+6. B10 song song (phần lớn ở phía máy GPU).
+
+B0(i) và B1 code trước khi chốt đặc tả §6 là ngoại lệ có chủ đích: dùng chung cho room code, không phụ thuộc
+workflow nghiên cứu. Từ mục 4 trở đi chỉ code theo đặc tả đã chốt.
 
 ### 3.5 Rủi ro
 - Khối lượng lớn: B0 + B1–B11 là nhiều tuần, không phải một phiên.
@@ -210,3 +225,105 @@ bộ kịch bản nghiệm thu mô hình đồ chơi. Hai model Lead khác nhau 
   E2E 51 file liên quan room/goal/điều phối/quota: 328 qua, 4 bỏ qua (skip có sẵn), 0 lỗi.
 - Chưa chạy bộ test đầy đủ (~2.476 file, ước 1,5–2 giờ): nên chạy khi máy rảnh.
 - Chưa kiểm theo fixture cách ly `docs/verification/README.md` với model thật.
+
+## 8. Bổ sung định nghĩa trước khi code tiếp (2026-11-10)
+
+Các mục dưới là **đề xuất**; chỗ ghi "Cần bạn quyết" phải chốt trước khi code mục B tương ứng.
+
+### 8.1 Mô hình mối đe doạ
+Mỗi luật B phải ghi nó chống mối đe doạ nào; nhãn CỨNG chỉ có nghĩa với mối đe doạ đã nêu.
+
+| Mã | Mối đe doạ | Áp cho | Hệ quả thiết kế |
+|---|---|---|---|
+| T1 | Model **nhầm**: quên vai, ghi sai file, báo PASS khi chưa chạy test | Mọi room | Kiểm tra cấu trúc + phát hiện sau là đủ |
+| T2 | Model **lách luật để "xong"**: tự viết tiêu chí dễ, chạy `test \|\| true`, sửa test, đọc tập khoá, chọn số đẹp | Room `research`; Tester/Evaluator ở mọi room | Không được tin bất cứ thứ gì do chính bot bị chấm tạo ra (văn bản, lệnh tự khai, file kết quả nó ghi được) |
+| T3 | Model phá máy / thoát quyền hệ điều hành | Ngoài phạm vi | Máy local không sandbox (A); ghi vào Known limitations, không hứa |
+| T4 | Người khác truy cập app / dữ liệu | Ngoài phạm vi | Kế thừa upstream (API key plain text) |
+
+Hệ quả cho các mục đang ghi CỨNG:
+- B0(ii) chỉ CỨNG với T2 khi lệnh kiểm tra **không** do bot bị chấm chọn và kết quả **không** do bot đó báo (§8.3).
+- B3 "quét log tìm đường dẫn tập khoá" chỉ chống T1; với T2 chỉ tách vật lý (tập khoá nằm trên máy GPU) mới đủ.
+
+### 8.2 `kind = "research"` bật những gì
+`kind` hiện chưa được đọc ở đâu. Đề xuất: mỗi luật dưới đây là một điều kiện **bắt buộc** khi `kind = "research"`;
+thiếu thì goal không bắt đầu (trả `needs-input` kèm lý do), không âm thầm chạy mềm.
+
+| Luật | Mục B | Ghi chú |
+|---|---|---|
+| Trần quyền theo vai luôn bật, bất kể `OMB_ROLE_CEILING` | B0(i) | Room research không được phép chạy ở chế độ cờ OFF |
+| Không có Chief of Staff phía trên chuỗi giao việc | A1 | Chief nâng quyền (bảng A1) |
+| Có file goal hợp lệ và đã khoá hash | B2, B8 | Lượt đầu luôn dừng chờ bạn duyệt |
+| Lệnh kiểm tra lấy từ file goal, không từ Lead | B0(ii), §8.3 | |
+| Evaluator/Reviewer khác nhà cung cấp model với Worker | B4, §8.5 | |
+| Song song tắt, trừ khi có B0(iii) | §1.3 | |
+| Ledger + guard ngân sách bật | B7 | |
+
+Room `code` (hoặc trống) giữ hành vi hiện tại; từng luật có thể bật riêng sau.
+
+### 8.3 Trường lệnh kiểm tra (`verify`) — điều kiện của B0(ii)
+- Thêm trường có cấu trúc, tách khỏi `doneWhen` (văn xuôi, giữ nguyên):
+  `verify: { id, command, cwd?, timeoutSec?, expectExit: 0, resultFile? }[]`.
+- **Nguồn lệnh** (cần bạn quyết):
+  1. Room `research`: chỉ từ file goal đã khoá (B2). Lead không thêm/bớt được.
+  2. Room `code`: (a) từ cài đặt room do bạn đặt; hoặc (b) Lead đề xuất, plan check chỉ nhận lệnh khớp allowlist
+     (`docs/verification/command-allowlist.md`). Đề xuất (a), có (b) làm dự phòng.
+- **Ai chạy lệnh** (cần bạn quyết; đề xuất phương án 1):
+  1. **Server tự chạy** `verify` trong thư mục room sau khi Tester xong; PASS = mọi lệnh thoát đúng `expectExit`.
+     Không phụ thuộc `summary` 200 ký tự hay `is_error` (A7), chống T2 vì bot không chạm vào kết quả.
+     Rủi ro: server chạy lệnh tuỳ ý — chấp nhận được chỉ vì lệnh đến từ nguồn bạn đặt, không từ bot.
+  2. Khớp `item.started.summary` với `command` và `item.completed.ok`. Rẻ hơn nhưng chỉ chống T1: summary bị cắt
+     và che bí mật, `ok` chưa chắc phản ánh mã thoát, `cmd || true` vẫn qua.
+- PASS cuối = `VERDICT: PASS` của Tester **và** mọi `verify` đạt. Lệch nhau → coi là FAIL, vào vòng sửa, ghi lý do.
+
+### 8.4 Tester không được vừa chấm vừa sửa
+- Tester ghi file trong vùng code (phát hiện bằng B0(iii)) → PASS của lượt đó **vô hiệu**, vòng sửa giao lại cho
+  Worker sở hữu file. Tester chỉ được ghi vào vùng báo cáo khai trước (B0(iv)).
+- Với phương án 1 ở §8.3 thì Tester ghi gì cũng không đổi được kết quả `verify`; luật này vẫn cần để code do Tester
+  sửa không lọt qua mà không ai review.
+
+### 8.5 "Vendor" trong B4
+- Vendor = **nhà cung cấp model thật**, không phải engine. OpenCode/ZCode/ACP có thể chạy model của nhiều nhà
+  (`provider\model`); Claude engine luôn là Anthropic.
+- Cần một hàm `modelVendor(bot)` → `anthropic | openai | xai | zai | google | … | unknown`.
+  `unknown` không được coi là "khác vendor" (trả kế hoạch, không đoán).
+- Kiểm lại mỗi lần đổi bot: giao lại do hết quota, bot dùng backup AI (backup có thể đổi vendor).
+
+### 8.6 Trạng thái lỗi và khôi phục còn thiếu
+Mỗi dòng cần một trạng thái đích có tên và một test:
+
+| Tình huống | Đề xuất |
+|---|---|
+| Server khởi động lại giữa một sóng | Task đang chạy coi là lỗi, sóng chạy lại từ task chưa xong (`goalRunId` không chạy lại sau restart — kiểm hành vi hiện tại) |
+| Một task trong sóng lỗi, task khác xong | Giữ kết quả task xong; Lead nhận lỗi ở lượt kế, không chạy lại cả sóng |
+| Hết 3 vòng sửa | `blocked` kèm lý do + kết quả Tester cuối, không phải `paused` |
+| Hai goal cùng lúc trong một room | Goal sau xếp hàng hoặc bị từ chối — cần bạn quyết |
+| Hết 13 lượt | Lead viết tóm tắt bàn giao ở lượt cuối (đã có ở §2) |
+| Nghiên cứu không đạt ngưỡng khi hết ngân sách | `completed` với kết quả **âm tính** — là kết quả hợp lệ, không phải lỗi; báo cáo vẫn cần provenance |
+
+### 8.7 Nghiệm thu "hai Lead cùng hành vi" (sửa §6.2 điểm 7)
+"Chuỗi trạng thái trùng nhau" quá chặt: cùng một model chạy hai lần cũng có thể khác. Đề xuất:
+- Mỗi Lead chạy N lần (N ≥ 3) trên mỗi kịch bản.
+- **Bất biến, phải đúng 100%:** dừng ở "cần bạn" đúng chỗ; không chạm tập khoá; không vượt ngân sách; không báo
+  `completed` khi `verify` chưa đạt.
+- **Cho phép khác:** số lượt, thứ tự task độc lập, câu chữ.
+- **Tương đương:** chuỗi trạng thái của mọi lần chạy nằm trong tập đường đi hợp lệ của máy trạng thái.
+
+### 8.8 Thông số đo còn thiếu cho `/research`
+Cần có trong mẫu file goal (B2), khoá cùng hash:
+- Một thước đo chính; các thước đo phụ chỉ để báo cáo, không dùng để quyết "xong".
+- Số seed và quy tắc gộp (trung bình ± độ lệch, hay min); ngưỡng áp lên giá trị nào.
+- Đơn vị ngân sách: giờ GPU, token, tiền — một hay nhiều trần.
+- Trần vòng thí nghiệm và "N vòng liên tiếp không cải thiện thì dừng" (trùng §6.4 điểm 4).
+
+### 8.9 Cách giữ NOTE.md
+- Dẫn code theo **tên hàm/kiểu**, chỉ thêm số dòng khi cần; `server/index.ts` hơn 10k dòng, số dòng lệch sau vài commit.
+- Khi xong một mục: sửa ngay dòng gốc của mục đó (không chỉ thêm dòng "xong" ở chỗ khác).
+- Khi đặc tả workflow (§6) bắt đầu viết, chuyển §3.2, §6, §8 sang `docs/plans/research-workflow.md`;
+  NOTE.md chỉ giữ việc mở và tiến độ.
+
+### 8.10 Đã quyết (2026-11-10) và còn mở
+1. ~~§1.3~~: **B0(iii) trước** — đã làm (`writes-audit`, §1.3 ghi "đã vá" ở đó).
+2. ~~§8.2~~: **đồng ý cả 7 luật** bắt buộc của `kind = "research"`.
+3. ~~§8.3 (ai chạy)~~: **server tự chạy** `verify`; (nguồn lệnh) **room `code` = cài đặt room do bạn đặt**, room research = file goal đã khoá.
+4. §8.6: hai goal cùng lúc trong một room — còn mở.
+5. Sáu điểm §6.4 vẫn còn mở.

@@ -233,6 +233,7 @@ import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
+import { gitStatusPorcelain, writesOutside } from "./writes-audit.ts";
 import { roomNow } from "./room-now.ts";
 import { looksLikeProgressQuestion } from "../shared/auto-goal.ts";
 import type { MemberNow } from "../shared/room-now.ts";
@@ -10956,6 +10957,16 @@ async function runGroupGoalOperation(args: {
     dispatchWave: (batch) => args.operation.goalRun
       ? runGoalWaveOnTree({ groupId: args.groupId, threadId: args.threadId, coordinatorBot: args.coordinator, run: args.operation.goalRun, cancelled: () => args.operation.cancelled, batch })
       : Promise.resolve(batch.map((task) => ({ botId: task.bot.id, ran: false, replyText: "", outcome: "dispatch_failed" as const }))),
+    snapshotWrites: async () => {
+      const cwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
+      return cwd ? gitStatusPorcelain(cwd) : undefined;
+    },
+    writesOutside: async (before, declared) => {
+      const cwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
+      if (!cwd) return undefined;
+      const after = await gitStatusPorcelain(cwd);
+      return after ? writesOutside(before, after, declared) : undefined;
+    },
     finish: (status, detail, text) => finishGroupGoalRun(args.groupId, args.operation, status, detail, text),
     progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),
     note: (text) => store.appendMessage(args.threadId, {

@@ -268,6 +268,10 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   taskThread?(bot: Bot, assignment: string): { threadId: string } | undefined;
   /** Run one conflict-free batch through the runtime tree; the run loop still owns turn counting and outcome handling. */
   dispatchWave?(batch: Array<{ bot: Bot; role?: string; assignment: string; readOnly?: boolean }>): Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepOutcome; stopReason?: string | null }>>;
+  /** Snapshot the room folder's write state before a wave batch; undefined disables the writes audit. */
+  snapshotWrites?(): Promise<readonly string[] | undefined>;
+  /** Paths changed since the snapshot that no task in the batch declared. */
+  writesOutside?(before: readonly string[], declared: readonly string[]): Promise<string[] | undefined>;
   /** One member turn; a step counts against the run's turns once its member is claimed. A `lane` thread lets
    * wave tasks run beside each other, one provider turn per thread. */
   step(bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult>;
@@ -495,6 +499,8 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
           // Wave tasks run beside each other only when every one of them gets its own lane thread;
           // one provider turn per thread is a server invariant.
           const lanes = deps.solo ? [] : entries.map((entry) => deps.taskThread?.(entry.bot, entry.plan.instruction));
+          const declared = entries.flatMap((entry) => entry.plan.writes ?? []);
+          const writesBefore = deps.snapshotWrites && !deps.solo ? await deps.snapshotWrites() : undefined;
           const results = deps.dispatchWave && !deps.solo
             ? await dispatchWaveBatch(deps, entries)
             : lanes.every((lane) => lane)
@@ -507,6 +513,13 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
           // Runtime-dispatched children never claim through onClaimed; a parallel batch is one team turn, however many ran.
           if (deps.dispatchWave && !deps.solo && results.some(({ result }) => result.ran)) run.turnCount += 1;
           if (deps.cancelled()) return;
+          if (writesBefore && deps.writesOutside) {
+            const outside = await deps.writesOutside(writesBefore, declared);
+            if (outside?.length) {
+              const who = [...new Set(results.filter(({ result }) => result.ran).map(({ entry }) => entry.bot.name))].join(", ");
+              deps.note(`${who} changed files outside their declared writes: ${outside.slice(0, 5).join(", ")}${outside.length > 5 ? ` (+${outside.length - 5} more)` : ""}`);
+            }
+          }
           for (const { entry, result } of results) {
             if (outOfUsage(result)) {
               const stop = replaceOutOfUsage(entry.bot, entry.plan.instruction);
