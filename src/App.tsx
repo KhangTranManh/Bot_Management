@@ -20,7 +20,7 @@ import { SIDEBAR_AND_PANEL_FIT, SIDEBAR_INLINE, TWO_SIDE_PANELS_FIT, useMediaQue
 import { preloadConnectedApps } from "@/lib/connected-apps";
 import {
   ActivityPanel, BotSettingsDialog, CloudAddDialog, ComputerPanel, FilesView, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace,
-  PluginsPanel, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoomPanel, SettingsModal, TeamMapPage, TriggersPage,
+  PluginsPanel, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoomPanel, SettingsModal, TeamMapPage, TriggersPage, OfficePage,
 } from "@/components/lazy-screens";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { useRoomPanelShown } from "@/lib/room-panel";
@@ -72,9 +72,17 @@ import { useChiefStepOpen } from "@/lib/default-bot";
 import { useSessionEnded } from "@/lib/session-ended";
 import { PairPage } from "./pair/PairPage";
 import { WebPanelPage } from "@/components/WebPanelPage";
+import { readLastConversation } from "@/lib/last-conversation";
+import { readSkinChoice } from "@/lib/skins";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
+  const officeArrival = useRef(readLastConversation() === null);
+  useEffect(() => {
+    if (!state.hydrated || !officeArrival.current) return;
+    officeArrival.current = false;
+    if (state.groups.some((group) => !group.dm) && readSkinChoice() === "neon") dispatch({ type: "showOffice" });
+  }, [state.hydrated, state.groups, dispatch]);
   useTeamChats(state.config);
   const needsYou = needsYouVersion(state.bots, state.groups, state.notifications);
   useTeamPeopleLoader(state.config, needsYou);
@@ -326,7 +334,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       <BotLimitPopup />
       {!framed && strips}
       <div className="relative flex min-h-0 flex-1">
-      {!calendarFocus && <button
+      {!calendarFocus && state.activeView !== "office" && <button
         type="button"
         ref={menuButtonRef}
         aria-label={t("app.openBotList")}
@@ -360,7 +368,9 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
           menuButtonRef.current?.focus();
         }}
       />}
-      {state.activeView === "team-map" ? (
+      {state.activeView === "office" ? (
+        <OfficePage onMenu={() => setDrawerOpen(true)} />
+      ) : state.activeView === "team-map" ? (
         <TeamMapPage />
       ) : state.activeView === "files" ? (
         <FilesView />

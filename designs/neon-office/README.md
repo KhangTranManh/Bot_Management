@@ -1,7 +1,8 @@
 # Neon Office
 
 The approved visual direction and screen definitions for Bot Management. This directory contains a design system
-and an interactive HTML preview with sample data. The Office screen and Neon app skin are not implemented yet.
+and an interactive HTML preview with sample data. The app now has a Neon skin, Compact layout and a frontend Office
+using existing room APIs. Backend and database schemas are unchanged.
 
 ![Animated Office design preview with sample rooms, bot states and handoffs](../../docs/images/neon-office.gif)
 
@@ -14,6 +15,7 @@ and an interactive HTML preview with sample data. The Office screen and Neon app
 | [Tokens](project/tokens.json) / [CSS tokens](project/tokens.css) | Design values and browser styles |
 | [Components](project/components/) | Component definitions and individual HTML previews |
 | [Screen definitions](../../NOTE.md) §10.5–10.6 | Approved decisions, behavior, data requirements and acceptance criteria |
+| [Compact layout](compact-layout.md) | Desktop sizes, readable typography, touch targets and responsive acceptance criteria |
 
 ## Approved decisions
 
@@ -40,8 +42,14 @@ and an interactive HTML preview with sample data. The Office screen and Neon app
 4. Goal card and panel (S4).
 5. Sidebar and Office (S1 + S2).
 
-These endpoints are requirements, not published APIs. New server modules belong in `server/routes/`;
-the detailed acceptance criteria remain in NOTE.md §10.6.
+These endpoints remain future requirements, not published APIs. The frontend implementation uses the existing
+snapshot, room `/now` and group PATCH routes instead; it does not add server routes or database migrations.
+Detailed task plans, real handoff traces, research ledger charts and per-run/per-role usage remain deferred until
+the existing API provides those data. The goal panel labels available usage as current-thread totals.
+
+Room settings can edit kind and verify commands and approve a goal file through the existing API. Validation and
+hash locking remain server-owned. The full screen definitions in NOTE.md §10.6 describe the target; §10.8 records
+which parts are available under the frontend-only constraint.
 
 ## README animation
 

@@ -7,6 +7,8 @@ import { useStore, type Bot, type Group, type Message } from "@/state/store";
 import { roundButtonCls } from "./bot-panel/rows";
 import { RoomStatus } from "./room-panel/RoomStatus";
 import { useRoomNow } from "@/lib/room-now";
+import { GoalInsights } from "./office/GoalInsights";
+import { goalMessages } from "./office/goal-insights";
 
 const FEED_LIMIT = 30;
 const LINE_LIMIT = 160;
@@ -18,8 +20,7 @@ function line(text: string | undefined, limit = LINE_LIMIT): string {
 }
 
 function feedOf(messages: Message[], cardId: string): Message[] {
-  const start = messages.findIndex((message) => message.id === cardId);
-  return messages.slice(start + 1)
+  return goalMessages(messages, cardId)
     .filter((message) => message.role === "bot" && (message.kind === "text" || message.kind === "activity") && line(message.kind === "activity" ? message.tool?.label ?? message.tool?.name : message.text))
     .slice(-FEED_LIMIT)
     .reverse();
@@ -76,6 +77,7 @@ export function GoalRunPanel({ group, cardId, onClose }: { group: Group; cardId:
         <h2 id="goal-run-panel-title" dir="auto" className="text-[16px] font-semibold text-ink">{line(run.goal) || t("routines.goal.groupGoal")}</h2>
         {run.detail && <p dir="auto" className="mt-1 text-[13px] leading-relaxed text-ink-secondary">{line(run.detail)}</p>}
         <RoomStatus group={group} members={members} now={now} />
+        <GoalInsights group={group} cardId={cardId} now={now} />
         <h3 className="mt-5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("goal.panel.activity")}</h3>
         {feed.length === 0 ? (
           <p className="mt-2 text-[13px] text-ink-tertiary">{t("goal.panel.empty")}</p>

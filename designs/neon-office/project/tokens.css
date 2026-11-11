@@ -46,6 +46,16 @@
   --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
   --font-body: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --no-sidebar-width: 240px;
+  --no-sidebar-row-min: 32px;
+  --no-header-min: 44px;
+  --no-detail-width: 320px;
+  --no-goal-width: 360px;
+  --no-office-rail: 320px;
+  --no-panel-padding: 12px;
+  --no-panel-gap: 12px;
+  --no-control-min: 32px;
+  --no-touch-min: 44px;
 }
 .title { font-family: var(--font-display); font-size: 26px; line-height: 1.1; font-weight: 700; letter-spacing: 0.12em; }
 .room { font-family: var(--font-display); font-size: 14px; line-height: 1.3; font-weight: 600; }
@@ -55,3 +65,8 @@
 .name-tag { font-family: var(--font-body); font-size: 11px; line-height: 1.2; font-weight: 600; }
 .data { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.4; font-weight: 400; }
 .data-xs { font-family: var(--font-mono); font-size: 10px; line-height: 1.3; font-weight: 500; letter-spacing: 0.08em; }
+[data-density="compact"] .title { font-size: 24px; line-height: 1.15; }
+[data-density="compact"] .room { font-size: 13px; line-height: 1.35; }
+[data-density="compact"] .body { font-size: 13px; line-height: 1.4; }
+[data-density="compact"] .body-sm { font-size: 12px; line-height: 1.45; }
+[data-density="compact"] .chat { font-family: var(--font-body); font-size: 14px; line-height: 1.55; }

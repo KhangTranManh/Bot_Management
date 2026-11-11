@@ -20,6 +20,7 @@ import { ResponderPage } from "./ResponderPage";
 import { RoomStatus } from "./RoomStatus";
 import { useRoomNow } from "@/lib/room-now";
 import { autoGoalOn } from "../../../shared/auto-goal";
+import { RoomWorkflowSettings } from "./RoomWorkflowSettings";
 
 /** Matches the server: goals plan parallel waves from three members. */
 const GOAL_WAVES_MIN_MEMBERS = 3;
@@ -245,6 +246,7 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
                   />
                 )}
               </Card>
+              <RoomWorkflowSettings key={group.id} group={group} />
             </>
           ) : (
             <div data-panel-page-view={page}>

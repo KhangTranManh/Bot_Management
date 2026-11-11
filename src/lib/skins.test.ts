@@ -68,8 +68,8 @@ describe("skins", () => {
     expect(PRIOR_INSTALL_SKIN).toBe("midnight");
   });
 
-  it("follows the computer between Daylight and Midnight by default", () => {
-    expect(DEFAULT_SKIN_CHOICE).toBe("system");
+  it("defaults new installs to Neon and retains the explicit System choice", () => {
+    expect(DEFAULT_SKIN_CHOICE).toBe("neon");
     expect(THEME_SKINS).toEqual({ light: "daylight", dark: "midnight" });
     expect(resolveSkin("system", false)).toBe("daylight");
     expect(resolveSkin("system", true)).toBe("midnight");
@@ -100,8 +100,8 @@ describe("skins", () => {
     },
   );
 
-  it("adds Aurora last, dark, with its light field kept off the picker miniature", () => {
-    expect(SKIN_IDS.at(-1)).toBe("aurora");
+  it("keeps Aurora dark, with its light field kept off the picker miniature", () => {
+    expect(SKIN_IDS).toContain("aurora");
     expect(SKINS.find((s) => s.id === "aurora")?.name).toBe("Aurora");
     expect(css).toMatch(/\[data-skin="aurora"\] \{[^}]*--code-color-scheme: dark;/);
     expect(css).toMatch(/@scope \(\[data-skin="aurora"\]:not\(\[data-skin-preview\]\)\) to \(\[data-skin\]\)\s*\{\s*main\.bg-app\s*\{/);

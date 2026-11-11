@@ -9938,5 +9938,6 @@
   "settings.simple.account.noNameHint": "Not set yet",
   "settings.simple.account.yourName": "Your name",
   "composer.command.researchDesc": "Run this request as a goal in this research room (the goal file gate applies).",
-  "room.panel.role.evaluator": "Evaluator"
+  "room.panel.role.evaluator": "Evaluator",
+  "skins.tagline.neon": "A night office. Neon marks the work."
 }

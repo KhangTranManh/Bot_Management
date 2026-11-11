@@ -50,7 +50,7 @@ Nhãn: **CỨNG** = server chặn thật; **MỀM** = nằm trong prompt/playboo
   3. Nhãn "Đã chạy như goal · Đổi thành chat" trên tin tự chạy goal.
   4. Team status hiện "hết lượt dùng" và giờ reset.
   5. Huy hiệu vai trong khung chat; kiểm tra màn hình hẹp.
-- **Giao diện Neon** (skin + màn hình Văn phòng): đã chốt quyết định và định nghĩa S1–S6 ở §10.5–10.6; chưa triển khai.
+- **Giao diện Neon**: đã có skin, Compact và Văn phòng trên API hiện có; phạm vi frontend và phần còn thiếu ở §10.8.
 - **Giới hạn 13 lượt**: hết lượt chỉ "tạm dừng", chạy lại thì đếm từ 0, không có tóm tắt bàn giao.
   Đề xuất: lead viết tóm tắt ở lượt cuối; nút "Tiếp tục" trên card goal; số lượt tối đa theo room.
 
@@ -406,7 +406,7 @@ Phần research chuyển ra `server/research-run.ts`, nên `server/index.ts` nh�
 `file-size-ratchet` (có từ trước); e2e goal/quyền 34/34 qua; 3 e2e POSIX-gated (`research-gate`, `verify-gate`,
 `writes-audit`) bỏ qua trên Windows, chưa chạy lần nào.
 
-## 10. Giao diện mới (Neon) — định nghĩa, chưa làm (2026-11-11)
+## 10. Giao diện mới (Neon) — định nghĩa và triển khai frontend (2026-11-11)
 
 Nguồn thiết kế: design system **Neon Office** ở `designs/neon-office/` (`5d74d3b72`, đã push): `project/tokens.json`,
 `project/README.md` (brand book), 11 thành phần (`project/components/*/README.md` + `preview.html`), Cover, màn hình mẫu
@@ -543,12 +543,56 @@ brand book (giữ thuật ngữ app: Lead, Worker, Tester, Reviewer, Evaluator, 
 
 **Thứ tự làm (cập nhật §10.3):** U0 skin (S6) → server: dữ liệu card goal + 3 endpoint → S3 + S5 → S4 → S1 + S2.
 
+### 10.7 Mật độ Compact cho UI mới
+
+Định nghĩa kích thước ở [`designs/neon-office/compact-layout.md`](designs/neon-office/compact-layout.md); đây là yêu cầu
+để triển khai UI; frontend đã áp dụng theo §10.8. Compact thay các kích thước cũ 340px rail / 26px title trong
+preview; HTML mẫu và GIF vẫn giữ bản gốc.
+
+| Phần | Mặc định Compact |
+|---|---|
+| Sidebar | 240px; kéo trong khoảng 220–320px, giữ lựa chọn độ rộng đã lưu |
+| Hàng sidebar / header | Tối thiểu 32px / 44px |
+| Panel room/bot / goal | 320px / 360px; overlay nếu chat còn dưới 600px |
+| Rail Văn phòng | 320px; xuống dưới khi vùng nội dung dưới 1100px |
+| Điện thoại | Dưới 640px vùng nội dung: danh sách room; vùng bấm tối thiểu 44px |
+| Padding panel / khoảng cách | 12px / 12px |
+| Chữ UI / chat / phụ | 13px / 14px / 12px |
+| Nút / input desktop | Tối thiểu 32px; nút chỉ icon 28px |
+| Composer | Tối thiểu 44px, tự cao theo nội dung |
+
+Không dùng CSS zoom hay scale toàn app. Hàng tự cao khi xuống dòng, giữ font nhập liệu 16px trên điện thoại, kiểm
+200% browser zoom. Dùng lại thiết lập mật độ sidebar hiện có, không tạo hai hệ density. Breakpoint tính theo vùng
+nội dung sau sidebar/panel, không chỉ `window.innerWidth`. Nghiệm thu ở 1920×1080, 1440×900, 1366×768, 1280×720,
+390×844; đo bounds/overflow và kiểm bàn phím cùng ảnh chụp.
+
+### 10.8 Áp dụng frontend, giữ nguyên backend và DB
+
+- Không sửa `server/`, `shared/`, schema hay migration. Skin và lựa chọn bố cục nằm phía trình duyệt; giữ skin và độ
+  rộng sidebar đã lưu. Neon mặc định cho cài đặt mới. Font Be Vietnam Pro, Chakra Petch và JetBrains Mono được đóng
+  gói offline, giấy phép ở `public/fonts/neon-OFL.txt`; màu vượt kiểm tra tương phản của repo.
+- S1/S2: mục Văn phòng, badge việc chờ theo lịch sử đã tải, scene room/bot thật, lọc, chọn bot, mở room/lane, phân trang
+  4 room trong scene. Dưới 640px vùng nội dung dùng danh sách room. API `/api/groups/:id/now` hiện có được đọc mỗi
+  5 giây khi trang hiện; cập nhật SSE dùng store sẵn có. Không dựng handoff giả: đường giữa bot chỉ thể hiện hàng chờ
+  khi snapshot có `waitingForBotId`. Dữ liệu không đọc được có cảnh báo.
+- S3/S5: thêm UI chọn loại room, sửa tối đa 8 lệnh verify và file goal, duyệt file goal; đều dùng group PATCH hiện có.
+  Lỗi schema/file thiếu do server trả về được hiển thị; hash hiển thị là hash lần duyệt, không tự khẳng định file hiện
+  tại chưa đổi. Không chạy verify chỉ vì bấm lưu. Cài đặt khác được giữ nguyên.
+- S4: goal panel có công việc hiện tại, báo cáo Tester/Reviewer khi có trong lịch sử, và lượng dùng của thread đang mở
+  nếu snapshot cung cấp. Feed được giới hạn đến trước card goal kế tiếp. Không coi tổng thread là tổng goal hoặc lane.
+- Chưa làm phần cần dữ liệu mới: bảng plan đầy đủ, handoff thật, đồ thị ledger nghiên cứu, số đo theo run/vai, cổng
+  verify/metric chi tiết. Các endpoint trong §10.6 vẫn là định nghĩa tương lai; không được thêm trong đợt frontend này.
+- Smoke browser: `scripts/testing/verify-neon-office.ts` khởi động fake-engine fixture và Chrome profile riêng; kiểm
+  desktop, mobile, viewport tương đương 200% zoom, lọc/chọn bằng bàn phím, lưu verify, lỗi file goal và duyệt file hợp lệ.
+  So sánh schema `messages.db`/`runtime.db` trước và sau để xác nhận không đổi cấu trúc. Ảnh và JSON kết quả ở
+  `.omb-scratch/verify-evidence/neon-office/`; recipe ở `docs/verification/neon-office.md`.
+
 ## 11. Đã dùng được chưa (2026-11-11)
 
 | Phần | Trạng thái |
 |---|---|
-| Room code (Lead/Worker/Tester/Reviewer) | Dùng được. Reviewer chỉ đọc thật khi chạy server với `OMB_ROLE_CEILING=1`. `verify` chỉ đặt được qua API |
-| Room research | Chạy được phía server, chưa sẵn sàng hẳn: chưa có UI (đặt `kind`, `goalFile`, duyệt file goal đều qua `PATCH /api/groups/:id`); e2e `research-gate` chưa chạy lần nào (POSIX); bot vẫn sửa được file metric và script chấm (T2, chờ B10); playbook Lead và §6.4 chưa có |
+| Room code (Lead/Worker/Tester/Reviewer) | Dùng được. Reviewer chỉ đọc thật khi chạy server với `OMB_ROLE_CEILING=1`. Có UI đặt `verify` qua API hiện có |
+| Room research | Có UI đặt loại room/file goal và duyệt hash; chưa có đồ thị ledger/preview schema trước duyệt. E2E `research-gate` POSIX vẫn chưa kiểm cục bộ; bot vẫn sửa được file metric/script chấm (T2); playbook Lead và §6.4 chưa có |
 | Model thật | Đã chạy fixture cách ly: code, research, hai Worker song song, Reviewer và vòng sửa; số đo ở §12.2–12.7. Chưa chứng minh giảm token hoặc hiệu năng trên dự án lớn |
 
 Trước khi dùng rộng hơn:

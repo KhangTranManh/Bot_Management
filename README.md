@@ -28,11 +28,12 @@ who checks, what happens when you interrupt, and how you see what everyone is do
 <p align="center">
   <img src="docs/images/neon-office.gif" alt="The team office: rooms as isometric platforms around the Chief of Staff, each bot at a desk with its state, hand-offs travelling between bots, and a side rail of running goals, things waiting for you, the selected bot and recent events." width="880">
 </p>
-<p align="center"><sub>The planned <b>Office</b> screen in the <a href="designs/neon-office/README.md">Neon Office</a> design system — a design preview with sample data, not yet in the app.</sub></p>
+<p align="center"><sub>The <a href="designs/neon-office/README.md">Neon Office</a> design reference — a preview with sample data. The app's Office uses available room data from the existing API.</sub></p>
 
 The approved UI definitions cover the Office, sidebar, room settings, goal plan/checks/usage panel, research approval
 and skin picker. Neon will be the default dark skin; existing skins stay available, and the Office gets its own sidebar
-entry. See the [design index](designs/neon-office/README.md) and [`NOTE.md`](NOTE.md) §10.5–10.6 for scope and implementation order.
+entry. The frontend implementation keeps backend code and database schemas unchanged. See the
+[design index](designs/neon-office/README.md) and [`NOTE.md`](NOTE.md) §10.5–10.8 for scope and remaining data requirements.
 
 ## What's new in this fork
 
@@ -73,6 +74,14 @@ now: `PATCH /api/groups/:id` with `goalFile`, then `researchGoalApprove: true`, 
 
 ### Seeing what is happening
 
+- **Office** in the sidebar: live room status, current goals, pending cards, selected bot and recent activity. It polls
+  the existing room `/now` route while visible. Seats follow the roles (Lead, then Workers, then Tester/Reviewer) and
+  dashed links draw the team workflow above: Chief → Lead, Lead → each Worker, each Worker → Tester/Reviewer. While a
+  goal runs, a beam labelled with the task goes from the Lead to each member running a job; real queue waits are blue.
+  On narrow screens it becomes a room list. New installs use the Neon
+  skin and a 240px sidebar; saved skins and sidebar widths are preserved. Choose **Neon Office** in Appearance to switch.
+- **Room workflow settings**: edit room kind and verify commands, select a research goal file and approve its hash
+  using the existing group PATCH route. The server retains validation and approval authority.
 - **Team status** in the room panel: each member's role, model, and live state — working, coordinating
   (turn n/13), waiting for you, idle or unavailable — plus the job it is running, how long it has run and its
   newest step.
@@ -115,8 +124,9 @@ and [`NOTE.md`](NOTE.md) §12 for per-role numbers.
   numbers are honest.
 - The held-out scan sees only tool calls the engine reports; reading a path through another route goes unseen.
 - The 13-turn goal limit pauses a run without a hand-off summary; sending the goal again restarts the count.
-- Roles can be set in Team status. `verify`, research room kind and goal-file approval still require the API;
-  their new screens and the Office above are defined (NOTE.md §10) but not built yet.
+- Office uses the room snapshots and history already loaded by the app; the pending-card count is limited to that
+  history. Office beams run from the Lead to members working during a goal, not from per-task hand-off records;
+  detailed task dependencies, research ledger charts and per-run/per-role usage are not exposed by the current API. The goal panel labels thread totals separately instead of treating them as run totals.
 - There is no automatic rotation across engine accounts when usage runs out. An explicitly configured backup AI
   keeps its existing recovery behavior; otherwise the Lead needs another available member of the same role.
 - A Worker that edits a file another Worker declared is reported, not stopped.
@@ -222,6 +232,8 @@ it fails the same way on the upstream base.
 [Apache License 2.0](LICENSE). Based on OpenMausBot © 2026 Milind Soni and OpenMausBot contributors; changes in
 this fork © 2026 their authors. `enterprise/` is source-available under its [own license](enterprise/LICENSE).
 See [LICENSING.md](LICENSING.md) and [NOTICE](NOTICE).
+
+Neon bundles Be Vietnam Pro, Chakra Petch and JetBrains Mono under [SIL OFL 1.1](public/fonts/neon-OFL.txt).
 
 Packaged Cua Driver components keep their upstream licenses; notices and the SBOM are in
 [`third_party/cua-driver/`](third_party/cua-driver/).

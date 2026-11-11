@@ -15,6 +15,7 @@ export const SKIN_IDS = [
   "halloween",
   "diwali",
   "aurora",
+  "neon",
 ] as const;
 export type SkinId = (typeof SKIN_IDS)[number];
 
@@ -25,6 +26,7 @@ export type Skin = {
 };
 
 export const SKINS: readonly Skin[] = [
+  { id: "neon", name: "Neon Office", tagline: "A night office. Neon marks the work." },
   { id: "midnight", name: "Midnight", tagline: "The original. Cool and dark." },
   { id: "atelier", name: "Atelier", tagline: "Daylight on paper, warm and quiet." },
   { id: "foundry", name: "Foundry", tagline: "Night shift. Dark, warm, lit in brass." },
@@ -44,7 +46,7 @@ export const SKINS: readonly Skin[] = [
 export type SkinChoice = SkinId | "system";
 export const THEME_SKINS = { light: "daylight", dark: "midnight" } as const satisfies Record<"light" | "dark", SkinId>;
 
-export const DEFAULT_SKIN_CHOICE: SkinChoice = "system";
+export const DEFAULT_SKIN_CHOICE: SkinChoice = "neon";
 export const PRIOR_INSTALL_SKIN: SkinId = "midnight";
 
 const KEY = "omb-skin";

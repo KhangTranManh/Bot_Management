@@ -2,6 +2,9 @@ Neon Office is the look of the team office in Bot Management: every room as a gl
 
 The full reference screen is `office-preview.html` beside this `project/` folder; it loads `tokens.css` and `components/bundle.css` from here and adds nothing of its own except page layout.
 
+The app implementation uses the [Compact layout definition](../compact-layout.md). Its dimensions supersede the
+original preview's 340px rail, 14px panel padding and 26px title; the HTML preview has not been resized yet.
+
 ## Content fundamentals
 
 - Write UI copy in Vietnamese, plainly, from the person's side: *Cần bạn*, *Luồng công việc*, *Vừa xảy ra*, *Bot đang chọn*.
@@ -25,9 +28,9 @@ The full reference screen is `office-preview.html` beside this `project/` folder
 ## Type
 
 - Three families, all from Google Fonts with the Vietnamese subset (loaded by `bundle.css`): `display` (Chakra Petch), `body` (Be Vietnam Pro), `mono` (JetBrains Mono).
-- `title`: the screen name, uppercase, once per screen, with `no-chromatic` (a 1px `magenta`/`cyan` split).
+- `title`: the screen name, 24px, uppercase, once per screen, with `no-chromatic` (a 1px `magenta`/`cyan` split).
 - `room`: room names. `label`: panel headings and floor lettering, uppercase with wide tracking.
-- `body` for running text and task names; `body-sm` for rows inside panels; `name-tag` for bot names in the scene.
+- `body` (13px) for controls and task names; conversation text stays 14px. `body-sm` (12px) for rows inside panels; `name-tag` for bot names in the scene.
 - `data` for every number, path, command, model id and hash, with tabular figures. `data-xs` for state words and tags, uppercase.
 - Nothing is set below 9.5px (role text inside a name tag); nothing in the rail below 10px.
 
@@ -57,7 +60,7 @@ The full reference screen is `office-preview.html` beside this `project/` folder
 
 ## Layout
 
-- The office screen is a grid: the stage at `minmax(0, 1fr)` and a 340px rail; below 1020px the rail drops under the stage.
+- The app Office uses a 320px rail beside the stage when its content area is at least 1100px wide; below that, the rail drops under it. Below 640px content width, show room cards instead of the scene. The reference HTML retains its original 340px rail.
 - The rail holds HudPanels in this order: Luồng công việc, Cần bạn, Bot đang chọn, Vừa xảy ra.
 - The header holds the `title`, a `data` status line (`SYS://online`, totals, the sample tag) and the FilterChip group, wrapping on narrow screens.
 - The legend of states sits inside the stage, bottom-left, as StateChips.

@@ -71,7 +71,7 @@ export function RoomStatus({ group, members, onRoles, now = [] }: {
             <BotAvatar bot={member} state={presence === "working" ? "working" : "happy"} size={28} animated={false} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] font-medium text-ink">{member.name}</div>
-              <div className="truncate text-[12px] text-ink-tertiary">{member.modelSelection.model}</div>
+              <div title={member.modelSelection.model} className="truncate text-[12px] text-ink-tertiary">{member.modelSelection.model}</div>
               {job && (
                 <div data-now-row={member.id} data-now-state={job.state} className="mt-0.5 text-[12px] leading-snug">
                   <div dir="auto" className="line-clamp-2 text-ink-secondary">

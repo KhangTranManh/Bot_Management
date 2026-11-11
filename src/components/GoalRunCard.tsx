@@ -76,6 +76,7 @@ export function GoalRunCard({ message, solo = false, onStop, onOpen }: { message
 
   return (
     <section
+      data-goal-run-card
       aria-label={t("routines.goal.runLabel", { status: t(copy.label) })}
       className={cn("w-full max-w-[680px] rounded-2xl border bg-card px-3.5 py-3 shadow-sm", copy.border, onOpen && "cursor-pointer hover:bg-raised/60")}
       {...(onOpen ? {

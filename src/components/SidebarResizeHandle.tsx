@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from "react";
+import { readSkin, subscribeSkin } from "@/lib/skins";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -11,8 +12,8 @@ import {
   saveSidebarWidth,
 } from "@/lib/sidebar-preferences";
 
-export function sidebarDefaultWidth(simple: boolean): number {
-  return simple ? 280 : 320;
+export function sidebarDefaultWidth(simple: boolean, neon = false): number {
+  return neon ? 240 : simple ? 280 : 320;
 }
 
 /** Narrower than this, the sidebar's dragged edge leaves its column of avatars; wider again, the sidebar opens. */
@@ -37,7 +38,7 @@ export function useSidebarWidth({ simple, sidePanelOpen, sidebarRef }: {
   sidebarRef: RefObject<HTMLElement | null>;
 }) {
   const key = simple ? SIMPLE_SIDEBAR_WIDTH_KEY : SIDEBAR_WIDTH_KEY;
-  const defaultWidth = sidebarDefaultWidth(simple);
+  const defaultWidth = sidebarDefaultWidth(simple, useSyncExternalStore(subscribeSkin, readSkin, readSkin) === "neon");
   const cap = simple ? 400 : 480;
   const maxWidth = sidePanelOpen ? defaultWidth : Math.min(cap, window.innerWidth - 320);
   const [savedWidth, setSavedWidth] = useState<number | null>(() => loadSidebarWidth(undefined, key));

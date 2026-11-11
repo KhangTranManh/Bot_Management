@@ -2,6 +2,13 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
+@import "@fontsource/be-vietnam-pro/400.css";
+@import "@fontsource/be-vietnam-pro/500.css";
+@import "@fontsource/be-vietnam-pro/600.css";
+@import "@fontsource/chakra-petch/600.css";
+@import "@fontsource/chakra-petch/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "./styles/neon.css";
 
 /* Phones and tablets have no hover, and Tailwind only applies `hover:` and
    `group-hover:` under `@media (hover: hover)`. A control revealed on hover
@@ -260,6 +267,64 @@
    white on the danger fill 3.32:1, both short of AA for the 13–15px labels
    they carry. Atelier and Foundry fix this via --color-accent-ink.
    ───────────────────────────────────────────────────────────────────────── */
+[data-skin="neon"] {
+  --code-color-scheme: dark;
+  --color-frame: #120f26;
+  --color-focus: #ff2bd6;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --color-app: #07060f;
+  --color-panel: #0d0b1c;
+  --color-raised: #1a1535;
+  --color-raised-hover: #251e45;
+  --color-composer: #120f26;
+  --color-composer-ring: #463c7a;
+  --color-card: #120f26;
+  --color-menu: #120f26;
+  --color-menu-hover: color-mix(in srgb, var(--color-raised) 70%, transparent);
+  --color-menu-active: #2b2550;
+  --color-inset: #1a1535;
+  --color-control: #211b3e;
+  --color-hairline: #463c7a;
+  --color-ink: #ece9ff;
+  --color-ink-secondary: #aaa4cf;
+  --color-ink-tertiary: #8f89b8;
+  --color-accent: #ff2bd6;
+  --color-accent-border: #ff2bd6;
+  --color-accent-text: #ff80e7;
+  --color-accent-ink: #07060f;
+  --color-bubble-user: #2b2550;
+  --color-bubble-user-ink: #ece9ff;
+  --color-success: #3dffa2;
+  --color-success-ink: #07060f;
+  --color-danger: #ff3864;
+  --color-danger-ink: #07060f;
+  --color-warning: #ffb020;
+  --color-scrollbar: #463c7a;
+  --color-maus-line: #ece9ff;
+  --color-edge: #2b2550;
+  --font-sans: "Be Vietnam Pro", "Segoe UI", system-ui, sans-serif;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 10px;
+  --radius-4xl: 12px;
+  --identity-green: #3dffa2;
+  --identity-blue: #4da3ff;
+  --identity-red: #ff3864;
+  --identity-orange: #ffb020;
+  --identity-purple: #9d7bff;
+  --identity-cyan: #00e5ff;
+  --identity-pink: #ff2bd6;
+  --identity-yellow: #ffd23f;
+  --identity-teal: #01a492;
+  --identity-coral: #e5634e;
+  --identity-silver: #a8adb4;
+  --identity-chrome: #b3bac4;
+}
+
 [data-skin="midnight"] {
   --code-color-scheme: dark;
   --color-app: #121212;
