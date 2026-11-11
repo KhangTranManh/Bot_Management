@@ -1,0 +1,31 @@
+{
+  "project": "inventory-service",
+  "baselineCommit": "6566aad00ebe1b743981eae88168ec5399e54ba7",
+  "goal": "Make every test in this project pass, including the new bulk-discount rule. Fix the code in src/, not the tests.",
+  "verificationCommand": "npm test",
+  "initialTests": { "pass": 2, "fail": 5 },
+  "previous": {
+    "models": { "lead": "claude-sonnet-5-5", "worker": "gpt-5.6-sol", "unusedWorker": "gpt-5.6-luna", "tester": "claude-haiku-5-5", "reviewer": null },
+    "status": "completed", "testsPassed": 7, "goalTurns": 5, "modelTurns": 5, "seconds": 65,
+    "tokensExcludingSetup": 352321,
+    "roleTokens": { "lead": 130324, "worker": 133889, "tester": 88108, "reviewer": 0 },
+    "workersUsed": 1
+  },
+  "current": {
+    "models": { "lead": "gpt-6-sol", "workerTerra": "gpt-6.1-terra", "workerLuna": "gpt-6-luna", "tester": "claude-haiku-5-5", "reviewer": "gpt-5.6-sol" },
+    "status": "completed", "testsPassed": 7, "goalTurns": 7, "modelTurns": 10, "seconds": 203,
+    "tokensExcludingSetup": 903484, "setupTokens": 4597,
+    "inputTokens": 896143, "outputTokens": 7341, "cachedInputTokensIncludedInInput": 746903,
+    "roleTokens": { "lead": 107272, "workerTerra": 298246, "workerLuna": 115061, "tester": 193796, "reviewer": 189109 },
+    "workersUsed": 2,
+    "firstWorkerIntervalsUtc": {
+      "terra": ["2026-11-11T02:03:59.822Z", "2026-11-11T02:05:08.071Z"],
+      "luna": ["2026-11-11T02:03:59.851Z", "2026-11-11T02:04:32.177Z"]
+    },
+    "reviewFinding": "Discounted line totals needed rounding to cents before aggregation; Worker fixed the finding, then Tester and Reviewer checked again.",
+    "finalIndependentChecks": { "testsPassed": 7, "testsFailed": 0, "gitDiffCheck": "pass", "testsAndPackageUnchanged": true },
+    "changedFiles": ["src/inventory.js", "src/money.js", "src/orders.js", "src/report.js"],
+    "usdTotalComplete": false
+  },
+  "interpretation": "Token totals accumulate across model steps, not one initial prompt. Different models, participants and repair rounds prevent isolating the effect of the code changes. Parallel work and review were demonstrated; token savings were not."
+}

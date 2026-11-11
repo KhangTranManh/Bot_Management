@@ -1,6 +1,7 @@
 # NOTE: việc còn mở, để định nghĩa sau
 
-Ghi ngày 2026-11-10. Đường dẫn và số dòng lấy từ lúc khảo sát; xác minh lại trước khi dựa vào.
+Ghi ngày 2026-11-10, cập nhật 2026-11-11. Đường dẫn và số dòng lấy từ lúc khảo sát; xác minh lại trước khi dựa vào.
+Trạng thái hiện tại: §10.5–10.6 là định nghĩa UI đã chốt; §11 là tình trạng dùng được; §12 là số đo chạy thật.
 Nhãn: **CỨNG** = server chặn thật; **MỀM** = nằm trong prompt/playbook; **PHÁT HIỆN SAU** = kiểm sau khi xảy ra.
 
 ## 1. Lỗi đã biết, cần sửa trước
@@ -49,6 +50,7 @@ Nhãn: **CỨNG** = server chặn thật; **MỀM** = nằm trong prompt/playboo
   3. Nhãn "Đã chạy như goal · Đổi thành chat" trên tin tự chạy goal.
   4. Team status hiện "hết lượt dùng" và giờ reset.
   5. Huy hiệu vai trong khung chat; kiểm tra màn hình hẹp.
+- **Giao diện Neon** (skin + màn hình Văn phòng): đã chốt quyết định và định nghĩa S1–S6 ở §10.5–10.6; chưa triển khai.
 - **Giới hạn 13 lượt**: hết lượt chỉ "tạm dừng", chạy lại thì đếm từ 0, không có tóm tắt bàn giao.
   Đề xuất: lead viết tóm tắt ở lượt cuối; nút "Tiếp tục" trên card goal; số lượt tối đa theo room.
 
@@ -333,7 +335,7 @@ Cần có trong mẫu file goal (B2), khoá cùng hash:
 
 ## 9. Đã hoàn thành và kết quả test (cập nhật 2026-11-11)
 
-Tất cả chạy trên engine giả, fixture cách ly theo `docs/verification/README.md`; chưa kiểm với model thật.
+Các kết quả test trong §9 chạy trên engine giả, fixture cách ly theo `docs/verification/README.md`; kết quả model thật ở §12.
 
 | Mục | Commit | Nội dung | Test |
 |---|---|---|---|
@@ -349,10 +351,10 @@ Tất cả chạy trên engine giả, fixture cách ly theo `docs/verification/R
 
 **Kết quả test 2026-11-11:** unit 9 file liên quan — **109/109 qua**; e2e regression goal + quyền (`group-goal-run`, `group-goal-wait-cap`, `role-ceiling`, `room-kind`) — **27/27 qua**; typecheck `tsconfig.server.json` sạch. E2E POSIX-gated (`writes-audit`, `verify-gate`) skip trên Windows cục bộ, chờ CI Linux chạy thật.
 
-**Còn mở:** B2, B8, B11, B7 → B3, B6, B9 (theo §3.4); §8.6 (hai goal cùng room); 6 điểm §6.4 (spec workflow); trần `edits` cho Tester là cấu hình mức bot (§6.2 điểm 5).
+**Còn mở:** §8.6 (hai goal cùng room); 6 điểm §6.4 (spec workflow); trần `edits` cho Tester là cấu hình mức bot (§6.2 điểm 5). B2–B11 đã xong ở §9.1–9.3.
 Phần thiếu của mục đã làm (chỉ cần cho room research): file được bảo vệ của `verify` (T2). Vùng báo cáo Tester/Evaluator ở đường đơn = rỗng (đường đơn không khai `writes`), nên mọi ghi của họ ở đó đều bị coi là ngoài vùng — luật đã chốt, không phải lỗi.
 E2E `writes-audit`, `verify-gate` chỉ chạy trên POSIX; chưa có bằng chứng CI đã chạy chúng.
-`scripts/testing/file-size-ratchet.test.ts` đang fail từ trước: `server/index.ts` (16.062 dòng, mốc 15.630), `shared/wire.ts` (1.026 > 1.000), `src/components/GroupView.tsx` (1.244, mốc 1.220).
+`scripts/testing/file-size-ratchet.test.ts` đang fail, và đã fail từ trước khi làm fork (cả 3 file đã vượt mốc ở bản gốc): `server/index.ts` (16.124 dòng sau `32edbc56e`, mốc 15.630), `shared/wire.ts` (1.030 > 1.000), `src/components/GroupView.tsx` (1.244, mốc 1.220). Muốn xanh phải tách code ra khỏi các file này.
 
 ### 9.1 Bổ sung 2026-11-11 (bản hai)
 
@@ -381,7 +383,7 @@ E2E `writes-audit`, `verify-gate` chỉ chạy trên POSIX; chưa có bằng ch�
 
 **Còn mở (chỉ còn việc chờ đặc tả/ngoài app):** B10 provenance (máy GPU); viết đầy đủ `docs/plans/research-workflow.md` + playbook + kịch bản nghiệm thu hai Lead (§6, cần duyệt bản nháp); §8.6-4 (hai goal cùng room); đường truyền GPU (§3.3).
 
-### 9.3 Sửa sau khi rà lại (2026-11-11)
+### 9.3 Sửa sau khi rà lại (2026-11-11, `32edbc56e`, đã push)
 
 | Lỗi | Sửa | Test |
 |---|---|---|
@@ -399,3 +401,344 @@ E2E `writes-audit`, `verify-gate` chỉ chạy trên POSIX; chưa có bằng ch�
 | README | Thêm mục Research rooms, sửa Known limitations | — |
 
 Phần research chuyển ra `server/research-run.ts`, nên `server/index.ts` nhỏ lại thay vì phình thêm.
+
+**Kết quả test (`32edbc56e`):** typecheck app + server sạch; lint sạch; unit + locale + ratchet 307 file qua, chỉ còn
+`file-size-ratchet` (có từ trước); e2e goal/quyền 34/34 qua; 3 e2e POSIX-gated (`research-gate`, `verify-gate`,
+`writes-audit`) bỏ qua trên Windows, chưa chạy lần nào.
+
+## 10. Giao diện mới (Neon) — định nghĩa, chưa làm (2026-11-11)
+
+Nguồn thiết kế: design system **Neon Office** ở `designs/neon-office/` (`5d74d3b72`, đã push): `project/tokens.json`,
+`project/README.md` (brand book), 11 thành phần (`project/components/*/README.md` + `preview.html`), Cover, màn hình mẫu
+`office-preview.html`. Định dạng theo baoyu-design (`designs/<slug>/project/`). Mockup xem trực tiếp:
+https://claude.ai/artifact/1uEJF74XodoD7o9TZjbjM9 (riêng tư).
+Mục lục công khai: [`designs/neon-office/README.md`](designs/neon-office/README.md). README dùng
+[`docs/images/neon-office.gif`](docs/images/neon-office.gif), 880×550, 58 frame, 8,7 giây; đây là preview dữ liệu mẫu,
+không phải màn hình đã tích hợp với dữ liệu app.
+
+### 10.1 Quyết định: thay giao diện, không viết lại app
+- Viết lại toàn bộ UI cũ **không khả thi**: `src/` có 569 file `.tsx`, khoảng 262.000 dòng TS/TSX (gồm test). Phần lớn là
+  tính năng kế thừa OpenMausBot (máy tính, giọng nói, app kết nối, routine, cài đặt, cloud). Viết lại = nhiều tháng,
+  mất tính năng, xung đột mỗi lần lấy code upstream.
+- App đã có cơ chế **skin**: 13 skin (`src/lib/skins.ts`), mỗi skin là khối `[data-skin="…"]` trong `src/styles.css`
+  đặt lại khoảng 60 biến `--color-*`, font, bán kính; mọi component đọc các biến này.
+- Nên "UI mới" làm ba lớp: (1) **skin `neon`** đổi cả app ngay, không sửa component; (2) **màn hình Văn phòng** làm màn
+  hình chính cho room/team; (3) **làm lại các bề mặt của team** (panel room, Team status, card goal) bằng thành phần
+  Neon. Các màn hình kế thừa giữ cấu trúc, chỉ khoác skin mới.
+
+### 10.2 Ánh xạ token Neon Office → biến của app
+
+| Biến app | Token Neon |
+|---|---|
+| `--color-app` | `void` |
+| `--color-panel` | `floor` |
+| `--color-card`, `--color-menu`, `--color-composer` | `panel` |
+| `--color-raised`, `--color-control`, `--color-inset` | `panel-raised` |
+| `--color-raised-hover`, `--color-menu-hover` | `panel-raised` + 6% `fg` |
+| `--color-hairline`, `--color-composer-ring`, `--color-scrollbar` | `line` / `line-strong` |
+| `--color-ink`, `--color-ink-secondary`, `--color-ink-tertiary` | `fg`, `muted`, `idle` |
+| `--color-accent`, `--color-accent-border`, `--color-accent-text` | `magenta` |
+| `--color-accent-ink`, `--color-success-ink`, `--color-danger-ink` | `on-neon` |
+| `--color-success`, `--color-danger`, `--color-warning` | `run`, `out`, `wait` |
+| `--color-bubble-user`, `--color-bubble-user-ink` | `panel-raised`, `fg` |
+| `--font-sans` | Be Vietnam Pro (đóng gói font, xem §10.4) |
+
+Token Neon còn thiếu cho app (thêm vào `tokens.json` khi làm U0): màu bong bóng chat, màu code, ô nhập.
+
+### 10.3 Giai đoạn
+
+| Giai đoạn | Việc | Xong khi | Công |
+|---|---|---|---|
+| U0 Skin | Khối `[data-skin="neon"]` theo §10.2; thêm `neon` vào `SKIN_IDS`/`SKINS`; đóng gói 3 font; góc vát và scanline chỉ ở panel, nút chính | Mọi màn hình đọc được ở skin Neon; `skins*.test.ts` qua; ảnh chụp các màn hình chính | Nhỏ–vừa |
+| U1 Dữ liệu | Endpoint gộp mọi room cho Văn phòng: thành viên, vai, trạng thái, goal run, task của plan, hand-off đang mở (tóm tắt, che bí mật), qua SSE sẵn có; viết trong `server/routes/` | e2e engine giả trả đúng cho 2 room | Vừa |
+| U3 Bề mặt team | Panel room, Team status, card/panel goal bằng thành phần Neon; bảng kế hoạch + cổng Tester (§2 mục 1, 2); ô cài `kind`, file goal, duyệt file goal, `verify` (hết gọi API tay) | Đặt room research và duyệt file goal hoàn toàn trong UI | Vừa |
+| U2 Văn phòng | Màn hình Văn phòng React theo `office-preview.html` (BotNode, RoomPlatform, HandoffBeam; GoalFlowCard, NeedItem, BotDetail, ActivityFeed); bấm bot mở lane | Chạy với dữ liệu U1; DOM test; màn hẹp → danh sách | Vừa–lớn |
+| U4 Mặc định | Neon thành skin mặc định; xử lý skin cũ theo §10.5; Văn phòng là màn hình mở đầu khi có room | Người dùng mới mở app thấy Văn phòng ở skin Neon | Nhỏ |
+
+Thứ tự đề xuất: U0 → U1 → U3 → U2 → U4 (U3 trước U2 vì bỏ được việc gọi API tay cho room research, có ích ngay).
+
+### 10.4 Ràng buộc
+- Chỉ một theme tối. Muốn chế độ sáng thì giữ skin cũ (Daylight…).
+- Bản desktop chạy offline: font không lấy từ Google Fonts được, phải đóng gói file font (như `Geist Variable` hiện tại);
+  kiểm giấy phép OFL của Chakra Petch, Be Vietnam Pro, JetBrains Mono.
+- Chỉ 4 chuyển động của Neon Office, tắt hết khi `prefers-reduced-motion`.
+- Ratchet kích thước file: mọi thứ mới nằm trong file mới, không thêm vào `server/index.ts` hay `GroupView.tsx`.
+- Khối skin và màn hình mới là file/khối mới nên lấy code upstream ít xung đột.
+
+### 10.5 Đã quyết (2026-11-11)
+1. Skin cũ **giữ trong cài đặt**; Neon là mặc định.
+2. Văn phòng là **một mục mới cạnh danh sách room** (sidebar giữ danh sách room/bot).
+3. **Không** làm bản sáng của Neon.
+4. Số đo từ đợt chạy thử (lượt theo vai, token và chi phí của run, cảnh báo vai không được giao) hiện **trong panel goal**.
+
+### 10.6 Định nghĩa từng màn hình
+
+Mọi màn hình dùng skin Neon và thành phần Neon Office (`designs/neon-office/project/components/`). Chữ UI tiếng Việt theo
+brand book (giữ thuật ngữ app: Lead, Worker, Tester, Reviewer, Evaluator, goal, task, verify, writes). Số luôn kèm giới hạn
+(`lượt 6/13`, `vòng sửa 1/3`). Mọi trạng thái bot dùng 5 từ cố định: đang xử lý, xếp hàng, chờ bạn, hết lượt, rảnh.
+
+**S1. Sidebar** (`src/components/Sidebar.tsx`, `SidebarSections.tsx`)
+- Mục **Văn phòng** trên cùng, trên danh sách room/bot; huy hiệu `wait` đếm việc "Cần bạn" của mọi room.
+- Danh sách room/bot giữ nguyên; hàng room thêm chấm trạng thái goal (đang chạy / chờ bạn / xong / dừng).
+- Xong khi: bấm Văn phòng mở màn hình S2; số huy hiệu bằng số mục ở cột "Cần bạn" của S2.
+
+**S2. Văn phòng** (component mới, theo `designs/neon-office/office-preview.html`)
+- Bố cục: cảnh isometric (`minmax(0, 1fr)`) + cột phải 340px; dưới 1020px cột phải xuống dưới; dưới 640px cảnh đổi thành
+  danh sách theo room (mỗi room một HudPanel, mỗi bot một dòng StateChip).
+- Cảnh: RoomPlatform theo `kind`, BotNode mỗi thành viên, HandoffBeam cho hand-off đang mở, hub Chief of Staff ở giữa
+  (không có Chief thì hub là app). Lọc: Tất cả / Code / Research / Cần bạn.
+- Cột phải: Luồng công việc (GoalFlowCard mỗi goal đang chạy), Cần bạn (NeedItem), Bot đang chọn (BotDetail), Vừa xảy ra
+  (ActivityFeed, 5 dòng).
+- Thao tác: bấm bot → mở lane/thread của nó; bấm thẻ HUD của room → mở room; bấm GoalFlowCard → làm nổi room; nút của
+  NeedItem → mở đúng thẻ duyệt hiện có (duyệt lệnh, duyệt file goal, hết lượt).
+- Trống (chưa có room): một HudPanel "Chưa có room nào" + nút tạo room.
+- Dữ liệu: endpoint mới `GET /api/office` (mọi room: thành viên, vai, model, `MemberNow`, goal run đang chạy, task của
+  plan, hand-off đang mở đã che bí mật) + cập nhật qua SSE sẵn có. Viết trong `server/routes/`.
+- Xong khi: chạy với dữ liệu thật của `D:\OMB-trial`; DOM test lọc, chọn bot, màn hẹp; tắt chuyển động khi
+  `prefers-reduced-motion`.
+
+**S3. Panel room và Team status** (`src/components/room-panel/RoomPanel.tsx`, `RoomStatus.tsx`)
+- Mỗi khối là HudPanel. Dòng thành viên: chấm trạng thái, tên, chọn vai (Lead / Worker / Tester / Reviewer / Evaluator),
+  model id (mono), việc đang làm, bao lâu, bước mới nhất.
+- Thêm: "hết lượt · reset HH:MM" (§2 mục 4); nút **Mở để duyệt** khi bot chờ duyệt (làm lại tính năng của stash đã mất);
+  huy hiệu vai trong khung chat (§2 mục 5).
+- Mục **Cài đặt room**: loại room (code / research); với room code, sửa danh sách `verify` (id, lệnh, thư mục con,
+  timeout, mã thoát mong đợi, tối đa 8); với room research, khối S5.
+- Xong khi: đặt vai, `kind`, `verify` hoàn toàn trong UI; không còn phải gọi `PATCH /api/groups/:id` tay.
+
+**S4. Card goal và panel goal** (`src/components/GoalRunCard.tsx`, `GoalRunPanel.tsx`)
+- Card: room, `lượt n/13`, chip trạng thái, Tag cổng Tester ("Tester: FAIL · vòng sửa 1/3"), Tag `verify` ("verify 1/2
+  đạt"), Tag metric cho room research ("0,95 / cần ≥ 0,90"); nhãn "Đã chạy như goal · Đổi thành chat" trên tin tự chạy goal.
+- Panel, theo thứ tự:
+  1. **Kế hoạch**: bảng task (id, người làm, vai, trạng thái, phụ thuộc, `writes`).
+  2. **Kiểm tra**: lịch sử phán quyết Tester theo vòng sửa; kết quả `verify` (mã thoát thật, 200 ký tự cuối output);
+     với room research, các lần đọc metric.
+  3. **Số đo của run** (quyết định 4): lượt theo vai (thanh), token vào/ra/cache và chi phí theo vai của riêng run này, tỉ
+     lệ cache; cảnh báo khi một vai có trong room nhưng không được giao ("Reviewer chưa được giao việc"), khi Lead chiếm
+     quá nửa số lượt, khi chỉ một trong nhiều Worker được dùng.
+  4. **Hoạt động**: các dòng audit `writes`, held-out, hết lượt của run.
+- Hết 13 lượt: nút **Tiếp tục** và tóm tắt bàn giao (§2, cần thêm phía server).
+- Dữ liệu: plan task và kết quả verify gửi kèm dữ liệu card goal; số đo lấy từ usage ledger (`data/usage/*.jsonl`) lọc theo
+  thread goal và lane của run trong khoảng thời gian của run, qua endpoint mới
+  `GET /api/groups/:id/goal-runs/:runId/usage`.
+- Xong khi: số đo của một run khớp phép tính tay trên ledger (như §12.3).
+
+**S5. Cài đặt room research** (trong S3 khi `kind = "research"`)
+- Ô đường dẫn file goal; trạng thái file: hợp lệ / lỗi schema (nêu lỗi) / thiếu.
+- sha256 rút gọn; nút **Duyệt file goal** (gọi `researchGoalApprove`); trạng thái khoá: chưa duyệt / đã duyệt / **đã đổi
+  sau khi duyệt** (chặn chạy).
+- Tóm tắt đọc từ file: metric, ngưỡng, hướng, số seed và cách gộp, ngân sách, pilot, handoff, tập khoá.
+- Ngân sách đã tiêu / tổng (từ ledger) và chuỗi metric qua các run (sparkline có điểm ngưỡng).
+- Cảnh báo khi room có Chief of Staff (room research sẽ không chạy).
+- Dữ liệu: endpoint mới `GET /api/groups/:id/research` (đọc file goal, hash, trạng thái khoá, lịch sử ledger).
+- Xong khi: tạo room research, chọn file, duyệt, chạy và xem metric hoàn toàn trong UI.
+
+**S6. Chọn skin** (`src/components/SkinPicker.tsx`, `src/lib/skins.ts`)
+- Neon đứng đầu và là mặc định cho người dùng mới; các skin cũ giữ nguyên trong danh sách.
+- Xong khi: `skins*.test.ts` qua; đổi qua lại Neon và skin cũ không để sót màu.
+
+**Endpoint mới cần cho UI:** `GET /api/office` (S2), `GET /api/groups/:id/goal-runs/:runId/usage` (S4),
+`GET /api/groups/:id/research` (S5); plan task + kết quả verify trong dữ liệu card goal (S4). Tất cả trong
+`server/routes/`, không thêm vào `server/index.ts`.
+
+**Thứ tự làm (cập nhật §10.3):** U0 skin (S6) → server: dữ liệu card goal + 3 endpoint → S3 + S5 → S4 → S1 + S2.
+
+## 11. Đã dùng được chưa (2026-11-11)
+
+| Phần | Trạng thái |
+|---|---|
+| Room code (Lead/Worker/Tester/Reviewer) | Dùng được. Reviewer chỉ đọc thật khi chạy server với `OMB_ROLE_CEILING=1`. `verify` chỉ đặt được qua API |
+| Room research | Chạy được phía server, chưa sẵn sàng hẳn: chưa có UI (đặt `kind`, `goalFile`, duyệt file goal đều qua `PATCH /api/groups/:id`); e2e `research-gate` chưa chạy lần nào (POSIX); bot vẫn sửa được file metric và script chấm (T2, chờ B10); playbook Lead và §6.4 chưa có |
+| Model thật | Đã chạy fixture cách ly: code, research, hai Worker song song, Reviewer và vòng sửa; số đo ở §12.2–12.7. Chưa chứng minh giảm token hoặc hiệu năng trên dự án lớn |
+
+Trước khi dùng rộng hơn:
+1. Giữ kiểm chứng bằng fixture cách ly theo `docs/verification/README.md`; code và research nhỏ đã qua ở §12.
+   Chạy thêm dự án lớn để đo chi phí và giới hạn 13 lượt; không dùng dữ liệu app đang chạy để thử mutation.
+2. Nếu có CI Linux: xem kết quả 3 e2e POSIX-gated.
+3. Chốt phần còn mở ở §6.4 và §8.6-4; triển khai UI theo định nghĩa đã duyệt ở §10.5–10.6.
+
+## 12. Tối ưu tính năng hiện có (2026-11-11)
+
+Đã có số đo thật trên fixture nhỏ (§12.2–12.7). Sóng song song và Reviewer hoạt động, nhưng chưa chứng minh tiết kiệm
+token; các lần đổi đội/model không phải phép so sánh kiểm soát. "Tối ưu" gồm ba hướng:
+
+| Hướng | Hiện trạng | Việc |
+|---|---|---|
+| Độ tin cậy | Lead giữ envelope và chia việc trong fixture thật; Reviewer bắt lỗi; Worker vẫn có thể ghi ngoài `writes` | Tiếp tục đo trên dự án lớn, giữ audit và kiểm tra độc lập |
+| Chi phí (lượt/token/thời gian) | Lượt bị đốt vì plan bị trả, `completed` sớm, `verify` lỗi, metric chưa đạt; hết 13 lượt chỉ tạm dừng, chạy lại đếm từ 0, không tóm tắt; Lead đọc lại toàn bộ ngữ cảnh mỗi lượt | Theo số đo: tóm tắt bàn giao + nút "Tiếp tục" khi hết lượt (ứng viên số 1); rút gọn hướng dẫn cho Lead nếu Lead ăn phần lớn token |
+| Trải nghiệm | `verify`, room research, duyệt file goal chỉ qua API; thiếu bảng kế hoạch, cổng Tester trên card, giờ reset quota (§2); trần quyền room code tắt mặc định | U3 (§10.3); cân nhắc bật `OMB_ROLE_CEILING` mặc định |
+
+Chi phí nhỏ phía server, chỉ sửa nếu đo thấy chậm: quét tập khoá đọc lại cả file event log mỗi lượt (nên đọc phần
+mới); audit `writes` chạy `git status` + băm file bẩn sau mỗi sóng (repo lớn sẽ chậm).
+
+Với room code, tối ưu có thể là **bớt** luật: đo xem luật nào (audit, verify, vendor, pilot, ngân sách) thật sự bắt
+được lỗi, luật nào chỉ tốn lượt.
+
+Thứ tự: (1) chạy thử model thật, thu số đo; (2) sửa 2–3 chỗ đốt lượt nhiều nhất; (3) U3; (4) tối ưu server và UI Neon.
+
+### 12.1 Kế hoạch chạy thử với model thật
+
+- **Có thể làm:** máy có `claude`, `codex`, `grok`, `gemini` đã cài (chưa có `opencode`, `zcode-acp-server`).
+- **Cách ly:** bộ `scripts/control-omb.ts launch` chỉ cài engine giả, nên không dùng được cho model thật. Chạy server
+  riêng với `OMB_DATA_DIR=<thư mục tạm>` và `OMB_PORT=<cổng trống>`, giữ `HOME` thật để các CLI còn đăng nhập. Dữ liệu
+  app đang chạy của bạn (`~/.openmausbot`, cổng 8799) không bị đụng. CLI sẽ ghi lịch sử phiên của chúng vào thư mục
+  cấu hình thật của chúng (`~/.claude`…).
+- **Tốn:** quota/tiền của tài khoản thật, ước vài chục lượt model cho hai kịch bản.
+- **Kịch bản A, room code:** repo git tạm có một project Node nhỏ với test đang fail; Lead (Claude) + Worker (Codex) +
+  Tester (Gemini hoặc Grok); `verify = npm test`; goal "sửa cho test qua".
+- **Kịch bản B, room research:** mô hình đồ chơi (script tính độ chính xác trên dữ liệu nhỏ có sẵn); file goal với
+  metric, 3 seed, ngân sách 10 phút, pilot 1 task, `verify` chạy script chấm; đi đủ: chờ duyệt → duyệt → chạy → kiểm
+  metric → xong hoặc dừng âm tính.
+- **Số đo mỗi goal:** số lượt, lần plan bị trả, vòng sửa, `completed` sớm, lý do và trạng thái cuối, thời gian, ghi chú
+  audit/held-out, và Lead có giữ đúng envelope không.
+- **Kết quả** ghi vào §12.2 khi chạy xong.
+
+### 12.2 Kết quả chạy thử model thật (2026-11-11)
+
+Môi trường: server riêng, database cố định `D:\OMB-trial\data` (không đụng `~/.openmausbot`), UI thật ở
+`http://127.0.0.1:8931` (chạy bằng `OMB_DATA_DIR=D:/OMB-trial/data OMB_PORT=8931 OMB_WEBHOOK_PORT=8932
+OMB_STATIC_DIR=D:/Bot_Management/dist node --experimental-strip-types server/index.ts`). Điều khiển qua đúng API của UI
+(`D:\OMB-trial\drive.mjs`); dự án ở `D:\OMB-trial\work`; số đo ở `D:\OMB-trial\report-*.json`. Bot ở Full access.
+Model: Lead `claude-sonnet-5-5`, Worker Codex `gpt-5.6-sol`, Tester `claude-haiku-5-5`, Reviewer Codex `gpt-5.6-luna`
+(chỉ room code). Grok hết quota; Gemini không có engine trong app; Ollama `qwen3:8b` đã thử gắn rồi bỏ.
+
+| Kịch bản | Kết quả | Lượt | Thời gian | Ghi chú |
+|---|---|---|---|---|
+| A, room code (`shop-lib`, 2 test fail) | `completed`, 2/2 test qua, sửa đúng `src/cart.js`, không đụng test | 7/13 | 61 s | Lead giao Tester chạy test **trước** khi Worker làm (mất 2 lượt); Lead chen một lượt sau mỗi thành viên (4/7 lượt là của Lead); Reviewer không được giao việc |
+| B, room research (`toy-classifier`, 0,70 → ngưỡng 0,90) | `completed`; server đọc metric 0,9545 (3 seed); ledger đủ `run-start`/`verify`/`metric`/`run-end` | 5/13 | 70 s | Plan 1 task qua pilot gate; Worker tự dò tham số trên `train.json`, không đụng tập khoá (không có cảnh báo held-out) |
+
+Không có plan bị trả, không `completed` sớm, Lead giữ đúng envelope ở cả hai.
+
+**Lỗi tìm ra nhờ chạy thật:** cả 3 e2e chỉ chạy trên POSIX (`research-gate`, `verify-gate`, `writes-audit`) tạo room
+không có `setup`, nên server trả 409 "finish room setup before sending the first message" — chúng sẽ fail ngay nếu được
+chạy. Đã sửa (thêm `setup` như các e2e khác).
+
+**Ứng viên tối ưu từ số đo:**
+1. Lượt của Lead: Lead chen giữa mọi bước. Với việc nhỏ, một plan có `dependsOn` (Worker → Tester) chạy trong một sóng
+   tiết kiệm 2–3 lượt; có thể thêm hướng dẫn cho Lead "giao Worker trước, Tester sau, trong cùng một plan".
+2. Tester chạy trước khi có thay đổi là lượt bỏ đi: plan check có thể trả plan giao Tester khi chưa có Worker nào làm.
+3. Ghi chú "…'s recent-work brief covers 1 private chat with you" xuất hiện mỗi thành viên mỗi run (tính năng kế thừa),
+   làm loãng dòng hoạt động của room.
+4. Chưa đo token (chưa đọc usage ledger); hai việc quá nhỏ nên chưa thấy được giới hạn 13 lượt hay vòng sửa.
+
+Bước sau: một kịch bản lớn hơn một chút (nhiều file, có vòng sửa) để đo vòng sửa, sóng song song và token.
+
+### 12.3 Vòng 2: dự án lớn hơn, Phase 16, đo token (2026-11-11)
+
+| Kịch bản | Kết quả | Lượt | Thời gian | Ghi chú |
+|---|---|---|---|---|
+| C, room code `inventory-service` (4 module, 5/7 test fail + một tính năng mới), 2 Worker | `completed`, 7/7 test qua, sửa cả 4 file `src/`, không đụng test | 5/13 | 65 s | Lead dồn mọi việc cho một Worker theo đường đơn: Worker 2 không được dùng, không có sóng song song |
+| D, room research Phase 16 (`D:/AGI`): viết `extract.py` tách khai triển `-(a-b)` từ lời giải văn bản cho scorer thật `score_negate_difference.py` (bước docstring ghi "still-unvalidated"); dữ liệu tổng hợp, 0,27 → ngưỡng 0,95 (seed thấp nhất) | `completed`, độ khớp nhãn 1,0 cả 3 seed trên tập khoá, dev 1,0 | 5/13 | 241 s | Worker chỉ sửa `extract.py`; không có cảnh báo held-out; Tester tự ghi một lỗ hổng nhỏ còn lại (`$` đứng ngay sau từ khoá → `missing`) |
+
+Dữ liệu Phase 16 ở đây là tổng hợp cho bài thử quy trình, không phải bằng chứng hay dữ liệu chuẩn của Phase 16; `D:/AGI` chỉ được đọc (scorer được chép sang).
+
+**Token** (bot "Token analyst" Codex `gpt-5.6-sol` tính từ `data/usage/2026-11.jsonl`, script `D:\OMB-trial\token_stats.js`,
+báo cáo `D:\OMB-trial\token-report.md`; đã đối chiếu độc lập, khớp từng số). Token = input + output; "lượt" = một bản
+ghi lượng dùng cho mỗi lượt của bot.
+
+| Dự án | Tổng token | Lượt | Chi phí ghi nhận |
+|---|---:|---:|---:|
+| Shop lib | 519.644 | 7 | $0,449 |
+| Inventory service | 352.321 | 5 | $0,312 |
+| Toy classifier | 506.694 | 5 | $0,337 |
+| Phase 16 extraction | 844.490 | 5 | $0,583 |
+| **Trung bình một dự án** | **555.787** (567.271 tính cả chi phí tạo bot) | | |
+
+| Vai | Tổng token | TB mỗi dự án | TB mỗi lượt |
+|---|---:|---:|---:|
+| Lead (Sonnet 5.5) | 739.156 | 184.789 | 56.858 |
+| Tester (Haiku 5.5) | 778.769 | 194.692 | 155.754 |
+| Worker (Codex sol) | 705.224 | 176.306 | 176.306 |
+| Reviewer, Worker 2 (Codex luna) | 0 | — | — |
+
+- 82,7% input là cache, output chỉ 1% tổng token: chi phí chủ yếu là nạp lại ngữ cảnh mỗi lượt, không phải sinh câu trả lời.
+- Lead rẻ mỗi lượt nhưng chiếm nhiều lượt nhất (13/22); Tester tốn gần bằng Worker mỗi lượt dù chỉ chạy test.
+- Chi phí tạo bot (gợi ý cài đặt, Haiku) khoảng 2%.
+- Chi phí USD là số engine báo về; lượt Codex theo gói đăng ký có thể không phản ánh đúng tiền thật.
+
+**Ứng viên rút ra từ vòng 2:** chia Worker song song, rút gọn ngữ cảnh, dùng Reviewer. Phần chia việc và tự thêm review
+đã commit ở `bc109424d`; đã chạy thật ở §12.5 và §12.7. Con số 150–175 nghìn ở báo cáo vòng 2 là token cộng dồn qua
+các lần model xử lý trong một lượt bot, không phải kích thước một prompt; `contextTokens` được phân biệt ở §12.7.
+
+### 12.4 Thử cho workflow tự sửa repo (2026-11-11)
+
+- Worktree `D:/OMB-trial/work/bot-management`, nhánh `trial/tester-before-work` (từ `bfebd4106`), `node_modules` nối sang
+  repo chính. Đội: Lead `claude-sonnet-5-5`, Worker Codex `gpt-5.6-sol`, Tester Codex `gpt-5.6-terra`, Reviewer
+  `claude-haiku-5-5`. `verify`: typecheck server, unit test goal-run, lint server. Script `D:\OMB-trial\drive-self.mjs`.
+- Việc: trả lại lần đầu khi Lead giao Tester trước khi Worker làm (lấy từ §12.2), lần sau chấp nhận; kèm unit test.
+- Kết quả: `blocked` ở lượt 2 sau 40 s — tài khoản ChatGPT của Codex hết hạn mức (reset 12/11/2026 17:04 giờ Việt Nam).
+  App xử lý đúng: nhận ra hết lượt, không có Worker khác, dừng với lý do rõ. Worktree chưa bị sửa.
+- Tính năng tự phục hồi (kế thừa) đã tự đặt lịch chạy tiếp lúc 17:05 ngày 12/11 trong database thử; chỉ chạy nếu server
+  thử còn bật.
+
+### 12.5 Chia việc song song với model thật (2026-11-11)
+
+Chạy trên thay đổi chia việc song song (đã commit ở `bc109424d`: Lead bắt buộc lập plan cho Worker, chia module độc lập cho nhiều
+Worker; server tự thêm task review sau task Worker; lượt goal bỏ brief công việc gần đây). Dự án `inventory-parallel`
+(bản sạch của Inventory service). Đội: Lead `claude-opus-5-5`, Worker 1 `claude-sonnet-5-5`, Worker 2 Codex
+`gpt-5.6-sol`, Tester Codex `gpt-5.6-terra`, Reviewer Codex `gpt-5.6-luna`; Codex qua engine `codexOrca2` (biến
+`CODEX_HOME` trong `instances` của `config.json` trỏ tới tài khoản Orca 2 — đặt `CODEX_HOME` cho tiến trình server
+không có tác dụng).
+
+| | Lần trước (§12.3, 1 Worker làm) | Lần này (song song) |
+|---|---|---|
+| Kết quả | `completed`, 7/7 | `completed`, 7/7, Reviewer không có phát hiện, chỉ sửa `src/` |
+| Lượt | 5 | **4** (Lead → sóng 2 Worker → sóng Tester + Reviewer → Lead) |
+| Thời gian | 65 s | 86 s |
+| Token | 352.321 | 555.426 (Lead Opus 179.629 / 2 lượt; Worker 1 138.417; Worker 2 65.016; Tester 64.808; Reviewer 107.556) |
+| Plan bị trả | 0 | 0 |
+
+- Thay đổi hoạt động đúng: Lead lập một plan chia việc cho cả 2 Worker, chạy cùng một sóng; Tester và Reviewer chạy cùng
+  sóng sau; không cần lượt Lead ở giữa. Không còn dòng "recent-work brief".
+- Ít lượt hơn nhưng tốn token hơn khoảng 58% và chậm hơn: thêm một vai (Reviewer) và một Worker, Lead Opus nạp nhiều
+  ngữ cảnh hơn Sonnet. Với dự án nhỏ, song song chưa lợi về token; lợi ích kỳ vọng ở dự án nhiều module hơn.
+- Lần chạy trước đó với cùng đội bị dừng tay ở lượt 1 (để lại 2 bot và một room cùng tên trong database thử).
+
+### 12.6 Team mới tự sửa repo (2026-11-11)
+
+- Nhánh `trial/self-fix-team2`, worktree `D:/OMB-trial/work/bm-team2`; commit nền `4fd18863e` = thay đổi chia việc song song
+  (chưa commit ở `main`). Đội: Lead Opus 5.5, Worker 1 Sonnet 5.5, Worker 2 Codex `gpt-5.6-sol`, Tester Codex
+  `gpt-5.6-terra`, Reviewer Codex `gpt-5.6-luna` (Codex qua `codexOrca2`). Script `D:\OMB-trial\drive-team2.mjs`.
+- Việc: lần đầu Lead giao Tester/Reviewer trước khi có Worker làm thì trả lại, lần sau chấp nhận; kèm unit test.
+- Kết quả: `completed` lượt 11/13, 763 s. Diff +79 test / +29 code, chỉ 2 file được phép, không commit. Kiểm lại độc lập:
+  typecheck, lint sạch; 73/73 test (goal-run, team-roles, comment-history).
+- Diễn biến: Lead chia theo file (Worker 1 code, Worker 2 test, phụ thuộc). Worker 1 viết luôn test (audit `writes` báo,
+  không chặn) nên Worker 2 chỉ kiểm lại. Tester PASS; Reviewer bắt một comment trái `AGENTS.md` và thiếu test giới hạn 3
+  lần trả → Lead tự mở vòng 2 (xoá comment, thêm test), rồi vòng 3 kiểm lại.
+- Token: **3,53 triệu** (Reviewer 895 nghìn / 3 lượt; Worker 1 844 nghìn / 2; Worker 2 805 nghìn / 3; Tester 546 nghìn /
+  3; Lead 437 nghìn / 4); chi phí engine báo $2,27 (phần Claude). Gấp khoảng 6 lần một dự án nhỏ: mỗi lượt trên repo
+  lớn nạp 150–450 nghìn token.
+- Bài học: (1) Worker lấn file của Worker khác vẫn xảy ra — cân nhắc cho audit `writes` của Worker cũng mở vòng sửa hoặc
+  dặn rõ hơn; (2) chia "code" và "test" cho hai Worker có phụ thuộc là chia giả song song, tốn thêm một Worker mà không
+  nhanh hơn; (3) Reviewer có ích thật (bắt lỗi quy ước mà test không bắt).
+
+### 12.7 Inventory service với Sol 6.0, Terra 6.1 và Luna 6.0
+
+- Cùng commit gốc `6566aad00ebe1b743981eae88168ec5399e54ba7`, cùng 7 test (ban đầu 2 qua, 5 lỗi), cùng goal và
+  `verify = npm test`. Fixture riêng `D:/OMB-trial/optimized-inventory-20261111`, cổng 8941; không thay dữ liệu cũ.
+- Đội: Lead `gpt-6-sol`; Worker `gpt-6.1-terra` và `gpt-6-luna`; Tester `claude-haiku-5-5`;
+  Reviewer `gpt-5.6-sol`. Terra 6.1 được duyệt thay cho Terra 6.0 không có trong catalog.
+- Lead chia orders/money cho Terra, inventory/report cho Luna ngay ở plan đầu; thời gian hai Worker chồng nhau.
+  Tester và Reviewer cũng chạy đồng thời sau Worker. Reviewer bắt lỗi làm tròn tiền dù 7 test đều qua; Lead giao
+  Terra sửa rồi kiểm lại cả Tester và Reviewer.
+
+| Chỉ số | Vòng 2 (§12.3) | Lần này |
+|---|---:|---:|
+| Kết quả | completed, 7/7 | completed, 7/7, chỉ 4 file `src/` đổi |
+| Lượt goal | 5/13 | 7/13 |
+| Lượt bot trong usage ledger | 5 | 10 |
+| Thời gian runner | 65 s | 203 s |
+| Token input + output, không gồm setup | 352.321 | 903.484 |
+| Worker được dùng | 1/2 | 2/2 |
+| Lượt Reviewer | 0 | 2 |
+
+Token theo vai: Lead 107.272 (3 lượt), Terra 298.246 (2), Luna 115.061 (1), Tester 193.796 (2), Reviewer 189.109 (2).
+Setup riêng 4.597 token. Kiểm độc lập `npm test` qua 7/7, `git diff --check` sạch; test và package.json không đổi.
+
+`contextTokens` ở lần model xử lý cuối của mỗi lượt: Terra 24.047–27.938, Luna 24.986, Tester 46.354–50.486;
+vòng 2 Worker 24.525, Tester 44.168. Chưa thấy giảm ngữ cảnh Worker/Tester; tổng token tăng 156,4% do thêm vai,
+thêm vòng sửa và thay model. Không thể quy riêng chênh lệch cho thay đổi code. Giá USD của các model 6.x chưa được
+ghi nhận: tổng tiền của các dòng có giá không phải hoá đơn toàn run.
+
+Bản tóm tắt có thể đối chiếu trong repo: [`docs/verification/evidence/inventory-live-comparison.json`](docs/verification/evidence/inventory-live-comparison.json).
+Report và transcript đầy đủ giữ tại fixture; không đưa dữ liệu phiên vào git.

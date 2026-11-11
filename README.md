@@ -25,6 +25,15 @@ work as a team on one goal.
 This repository is a fork of OpenMausBot that focuses on **how that team works together**: who plans, who builds,
 who checks, what happens when you interrupt, and how you see what everyone is doing.
 
+<p align="center">
+  <img src="docs/images/neon-office.gif" alt="The team office: rooms as isometric platforms around the Chief of Staff, each bot at a desk with its state, hand-offs travelling between bots, and a side rail of running goals, things waiting for you, the selected bot and recent events." width="880">
+</p>
+<p align="center"><sub>The planned <b>Office</b> screen in the <a href="designs/neon-office/README.md">Neon Office</a> design system — a design preview with sample data, not yet in the app.</sub></p>
+
+The approved UI definitions cover the Office, sidebar, room settings, goal plan/checks/usage panel, research approval
+and skin picker. Neon will be the default dark skin; existing skins stay available, and the Office gets its own sidebar
+entry. See the [design index](designs/neon-office/README.md) and [`NOTE.md`](NOTE.md) §10.5–10.6 for scope and implementation order.
+
 ## What's new in this fork
 
 ### Team workflow
@@ -36,7 +45,7 @@ who checks, what happens when you interrupt, and how you see what everyone is do
 | **Tester gate** | A plan with Worker tasks gets a Tester task that waits on them. The goal cannot complete until the Tester ends with `VERDICT: PASS`. A failure starts a fix round for the Worker who owns the file (at most three). A room can also list its own check commands (`verify`, set through the API for now): the server runs them itself and the goal completes only when they exit as expected. A Tester that edits files outside its report has its PASS voided. |
 | **Review after implementation** | When the room has a Reviewer, a Worker plan also gets a review task waiting on the changed work. Review and testing can run together. The Lead must obtain a review of the latest Worker changes before completing and assess its findings; a review report is not a test verdict. |
 | **Focused goal context** | Goal turns omit unrelated recent-work briefs and select installed playbooks from the current goal assignment rather than old room messages. Handoffs ask for file references, check outcomes and actionable failures instead of full files and successful logs. Room history, standing instructions, permissions and required skills remain available. |
-| **Plan checks** | A plan that hands work to the Lead, to a member without a role, or to a Worker without listing what it writes goes back to the Lead to fix. |
+| **Plan checks** | A plan that hands work to the Lead, to a member without a role, or to a Worker without listing what it writes goes back to the Lead to fix. Sending the Tester or Reviewer before any Worker has worked is refused once (send it again for a deliberate baseline). |
 | **Reviewers read only** | Review tasks run as consultations at the *Ask* level: any write or command waits for your approval. Hard-enforced with `OMB_ROLE_CEILING=1` (a consultation node's recorded level caps the turn and the app's auto-approvals); without the flag it relies on the model following its role. |
 | **Out of AI usage** | A member whose model hits its usage limit or runs out of credits leaves the run; the Lead is told to hand its task to a free member of the same role. Bots with a backup AI configured keep going on it, as before. |
 
@@ -70,6 +79,27 @@ now: `PATCH /api/groups/:id` with `goalFile`, then `researchGoalApprove: true`, 
 - **Goal panel**: click a goal card to see the run's turn, the team, and every result since the goal started.
 - Long bot replies in a room fold to their opening with **Show full**.
 
+### Tried with real models
+
+Live-engine trials ran end to end with Claude Opus/Sonnet/Haiku 5.5 and Codex 5.6/6.x models in isolated
+data folders, driven through the same API the app uses:
+
+| Goal | Result | Turns |
+|---|---|---|
+| Fix a two-bug Node library | completed, tests pass, only `src/` changed | 7 / 13 |
+| Fix a four-module service plus a new rule (one Worker, then two in parallel) | completed both times | 5, then 4 / 13 |
+| Repeat that service with Lead Sol 6.0, Workers Terra 6.1/Luna 6.0, Reviewer Sol 5.6 and Tester Haiku 5.5 | completed, 7/7; Reviewer found a rounding edge case and the team fixed and rechecked it | 7 / 13 |
+| Toy classifier to 0.90 accuracy (research room) | completed, server-read metric 0.95 over 3 seeds | 5 / 13 |
+| Phase 16 transcript extraction for a real CPU scorer (research room) | completed, label agreement 1.0 on the locked set | 5 / 13 |
+| This repository fixing its own goal loop | completed, the Reviewer caught a comment-rule breach and the Lead opened a fix round | 11 / 13 |
+
+Small completed trials used about 0.35–0.90 M tokens; the self-fix on this repository about 3.5 M. The latest service
+run used 903,484 tokens over 203 seconds, versus 352,321 over 65 seconds before: parallel work and review were used,
+but token savings were not demonstrated. Models, participants and repair rounds differ between runs. Token totals
+sum input and output across model steps; they are not the size of one prompt. Prices are missing for the 6.x rows,
+so the recorded USD sum is incomplete. See the [comparison evidence](docs/verification/evidence/inventory-live-comparison.json)
+and [`NOTE.md`](NOTE.md) §12 for per-role numbers.
+
 ### Known limitations
 
 - Writes outside a task's declared `writes` are reported after each wave in a git folder, not blocked; ignored
@@ -85,6 +115,11 @@ now: `PATCH /api/groups/:id` with `goalFile`, then `researchGoalApprove: true`, 
   numbers are honest.
 - The held-out scan sees only tool calls the engine reports; reading a path through another route goes unseen.
 - The 13-turn goal limit pauses a run without a hand-off summary; sending the goal again restarts the count.
+- Roles can be set in Team status. `verify`, research room kind and goal-file approval still require the API;
+  their new screens and the Office above are defined (NOTE.md §10) but not built yet.
+- There is no automatic rotation across engine accounts when usage runs out. An explicitly configured backup AI
+  keeps its existing recovery behavior; otherwise the Lead needs another available member of the same role.
+- A Worker that edits a file another Worker declared is reported, not stopped.
 
 ### Engines and fixes
 
