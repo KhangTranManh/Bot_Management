@@ -91,6 +91,20 @@ afterEach(async () => {
 });
 
 describe("ACP threads sharing one agent process", () => {
+  it("refuses to release a shared process for worktree cleanup and releases a dedicated idle process", async () => {
+    const shared = await fixture();
+    await shared.run("thread-a"); await shared.run("thread-b");
+    expect(shared.spawned).toHaveLength(1);
+    expect(await shared.instance.adapter.releaseIdleThread!("thread-a")).toBe(false);
+    expect((await shared.run("thread-b")).done).toMatchObject({ ok: true });
+    expect(shared.spawned).toHaveLength(1);
+    const dedicated = await fixture({ shareProcess: false });
+    await dedicated.run("thread-c");
+    expect(await dedicated.instance.adapter.releaseIdleThread!("thread-c")).toBe(true);
+    await exited(dedicated.spawned[0]!);
+    expect(dedicated.spawned[0]!.exitCode !== null || dedicated.spawned[0]!.signalCode !== null).toBe(true);
+  });
+
   it("runs threads with the same spawn contract as separate sessions of one process, each on its own thread", async () => {
     const f = await fixture();
     const [a, b] = await Promise.all([f.run("thread-a"), f.run("thread-b")]);

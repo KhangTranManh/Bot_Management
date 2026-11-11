@@ -30,6 +30,10 @@ exception: `OMB_OPENAI_LIVE_URL` crosses when it is a loopback
 and `OMB_OPENAI_LIVE_KEY` crosses only with it, so that key can only ever
 reach the fake.
 
+Git workflow recipes can explicitly pass an absolute installed `git`
+executable to `launchVerificationServer`. This adds only its directory to the
+fixture's tool path; the home, provider and project data remain disposable.
+
 Pass the printed URL explicitly from a second terminal:
 
 ```sh
@@ -79,6 +83,8 @@ Use only mapped, tested commands:
 - [Welcome flow and guided tour](onboarding.md)
 - [Channels](channels.md)
 - [In-chat team coordination](room-coordination.md)
+- [Room project profiles and the pre-goal baseline](room-project.md)
+- [Isolated goal branches, conflict repair and explicit decisions](goal-branches.md)
 - [Question cards: a teammate's question, in its chat and the person's inbox](question-cards.md)
 - [Chief authority over additional departments](team-access.md)
 - [Engines and Doctor](engines.md)

@@ -4,7 +4,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 
@@ -270,7 +270,7 @@ export async function launchVerificationServer(
   /** A stand-in enterprise layer (the folder shape core loads) and the key
    * it should accept, so a recipe can prove entitled behaviour offline. */
   enterprise?: { dir: string; licenseKey: string },
-  room?: { scripted: boolean },
+  room?: { scripted: boolean; gitBinary?: string },
   /** Optional repository-owned fake providers for multi-engine setup checks. */
   extraProviders: Array<"codex" | "cline" | "copilot" | "customAcp"> = [],
   /** Programmatic tests only: an owned loopback Boat provider, never a live account. */
@@ -278,6 +278,7 @@ export async function launchVerificationServer(
   /** Programmatic web UI qualification against the fixture's static server. */
   staticDir?: string,
 ): Promise<VerificationServer> {
+  if (room?.gitBinary && (!isAbsolute(room.gitBinary) || !/^git(?:\.exe)?$/i.test(basename(room.gitBinary)))) throw new ControlOmbError("The Git fixture needs an explicit absolute git executable");
   if (boatFixtureApi) {
     if (!/^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}$/.test(boatFixtureApi)) {
       throw new ControlOmbError("Boat verification requires an explicit loopback HTTP provider");
@@ -346,6 +347,9 @@ export async function launchVerificationServer(
 
   const log = openSync(logPath, "a", 0o600);
   const childEnv = verificationServerEnvironment(parentEnv, dataDir, port);
+  if (room?.gitBinary) {
+    childEnv.OMB_EXTRA_PATH = dirname(room.gitBinary);
+  }
   // Opt-in live Local VM fixture: keep the temporary home and fake engine,
   // granting only the explicitly selected machine connection and static UI.
   if (localVm) Object.assign(childEnv, {

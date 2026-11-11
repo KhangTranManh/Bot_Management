@@ -316,6 +316,8 @@ export interface ProviderAdapter {
   hasSession(threadId: ThreadId): boolean;
   /** The local process running this thread's engine, while there is one: a long tool call's own processes are under it. */
   enginePid?(threadId: ThreadId): number | undefined;
+  /** Releases an idle thread's cached local process before its worktree is removed. False refuses an active or shared process; persisted resume cursors are kept. */
+  releaseIdleThread?(threadId: ThreadId): Promise<boolean>;
   stopAll(): Promise<void>;
   onEvent(listener: RuntimeEventListener): () => void;
   /** `ping` sends one tool-less forked request without touching the thread's session; `hold` keeps the live session open until

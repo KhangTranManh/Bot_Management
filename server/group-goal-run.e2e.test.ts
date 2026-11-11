@@ -79,7 +79,7 @@ beforeAll(async () => {
         environment: {
           FAKE_CLAUDE_MODE: "happy",
           FAKE_CLAUDE_REPLIES: JSON.stringify([
-            'Plan.\n<openmaus-goal>{"status":"continue","detail":"Independent modules","tasks":[{"id":"a","assignee":"Held worker","instruction":"Build a.ts","writes":["a.ts"]},{"id":"b","assignee":"Free worker","instruction":"Build b.ts","writes":["b.ts"]}]}</openmaus-goal>',
+            'Plan.\n<openmaus-goal>{"status":"continue","detail":"Independent modules","brief":{"goal":"Build independent a.ts and b.ts"},"tasks":[{"id":"a","assignee":"Held worker","instruction":"Build a.ts","writes":["a.ts"]},{"id":"b","assignee":"Free worker","instruction":"Build b.ts","writes":["b.ts"]}]}</openmaus-goal>',
             'Reviewed.\n<openmaus-goal>{"status":"completed","detail":"Built, tested and reviewed."}</openmaus-goal>',
           ]),
           FAKE_CLAUDE_REPLY_STATE: join(home, "optimized-lead-replies.txt"),
@@ -99,7 +99,31 @@ beforeAll(async () => {
       },
       optimizedReviewer: {
         driver: "claudeAgent", displayName: "Optimized reviewer",
-        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["Reviewed a.ts and b.ts. No findings."]) }, config: { cli: FAKE_CLAUDE },
+        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["Reviewed a.ts and b.ts. No findings.\nREVIEW: CLEAR"]) }, config: { cli: FAKE_CLAUDE },
+      },
+      blockLead: {
+        driver: "claudeAgent", displayName: "Block lead",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify([
+            'Plan.\n<openmaus-goal>{"status":"continue","detail":"One module","brief":{"goal":"Build c.ts"},"tasks":[{"id":"c","assignee":"Block worker","instruction":"Build c.ts","writes":["c.ts"]}]}</openmaus-goal>',
+            'Done.\n<openmaus-goal>{"status":"completed","detail":"Built and tested."}</openmaus-goal>',
+            'Done.\n<openmaus-goal>{"status":"completed","detail":"Built; rounding is out of scope for this goal."}</openmaus-goal>',
+          ]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "block-lead-replies.txt"),
+        }, config: { cli: FAKE_CLAUDE },
+      },
+      blockWorker: {
+        driver: "claudeAgent", displayName: "Block worker",
+        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["Built c.ts."]) }, config: { cli: FAKE_CLAUDE },
+      },
+      blockTester: {
+        driver: "claudeAgent", displayName: "Block tester",
+        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["Checks pass.\nVERDICT: PASS"]) }, config: { cli: FAKE_CLAUDE },
+      },
+      blockReviewer: {
+        driver: "claudeAgent", displayName: "Block reviewer",
+        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["FINDING: block c c.ts:7 — the total rounds down\nREVIEW: BLOCK 1"]) }, config: { cli: FAKE_CLAUDE },
       },
       complete: {
         driver: "claudeAgent",
@@ -256,7 +280,7 @@ beforeAll(async () => {
         environment: {
           FAKE_CLAUDE_MODE: "happy",
           FAKE_CLAUDE_REPLIES: JSON.stringify([
-            "Builder takes the page.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Role builder\",\"instruction\":\"Add the page\",\"writes\":[\"page.tsx\"]}]}</openmaus-goal>",
+            "Builder takes the page.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"brief\":{\"goal\":\"Build the page\"},\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Role builder\",\"instruction\":\"Add the page\",\"writes\":[\"page.tsx\"]}]}</openmaus-goal>",
             "Tested and done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Page added and tested.\"}</openmaus-goal>",
           ]),
           FAKE_CLAUDE_REPLY_STATE: join(home, "role-lead-replies.txt"),
@@ -299,7 +323,7 @@ beforeAll(async () => {
         environment: {
           FAKE_CLAUDE_MODE: "happy",
           FAKE_CLAUDE_REPLIES: JSON.stringify([
-            "Maple builds.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit maple\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
+            "Maple builds.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"brief\":{\"goal\":\"Build the page\"},\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit maple\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
             "Clover takes it.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Moved\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit clover\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
             "Done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"UI built by Clover.\"}</openmaus-goal>",
           ]),
@@ -457,6 +481,24 @@ describe("goal-driven channel runs", () => {
     await expect.poll(async () => (await state()).messages.find((message: any) => message.kind === "goal.run")?.goalRun, { timeout: hostTimeout(20_000) })
       .toMatchObject({ status: "completed", turnCount: 4, detail: "Built, tested and reviewed." });
     expect(results(await state()).sort()).toEqual(["Free worker", "Held worker", "Optimized reviewer", "Optimized tester"].sort());
+  });
+
+  it("holds completion once on a Reviewer's blocking finding and records the Lead setting it aside", async () => {
+    const make = async (name: string, instanceId: string) => (await api("POST", "/api/bots", { name, modelSelection: { instanceId, model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const lead = await make("Block lead", "blockLead");
+    const worker = await make("Block worker", "blockWorker");
+    const tester = await make("Block tester", "blockTester");
+    const reviewer = await make("Block reviewer", "blockReviewer");
+    const room = (await api("POST", "/api/groups", {
+      name: "Block team", memberIds: [lead.id, worker.id, tester.id, reviewer.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
+    expect((await api("PATCH", `/api/groups/${room.id}`, { roles: { [lead.id]: "lead", [worker.id]: "worker", [tester.id]: "tester", [reviewer.id]: "reviewer" } })).status).toBe(200);
+    expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "Build c.ts, test and review", mode: "goal", sendId: "goal_block_review_1234567890" })).status).toBe(202);
+    const state = async () => (await api("GET", "/api/bots?messages=80")).body.groups.find((candidate: { id: string }) => candidate.id === room.id);
+    await expect.poll(async () => (await state()).messages.find((message: any) => message.kind === "goal.run")?.goalRun, { timeout: hostTimeout(20_000) })
+      .toMatchObject({ status: "completed", turnCount: 5, detail: "Built; rounding is out of scope for this goal.", brief: { goal: "Build c.ts", acceptance: [], openQuestions: [] } });
+    expect((await state()).messages.some((message: any) => message.kind === "activity" && message.tool?.name?.includes("blocking findings set aside: Built; rounding is out of scope"))).toBe(true);
   });
 
   it("returns to the lead until the goal is completed and appends a clean receipt", async () => {

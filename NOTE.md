@@ -1,7 +1,9 @@
 # NOTE: việc còn mở, để định nghĩa sau
 
-Ghi ngày 2026-11-10, cập nhật 2026-11-11. Đường dẫn và số dòng lấy từ lúc khảo sát; xác minh lại trước khi dựa vào.
-Trạng thái hiện tại: §10.5–10.6 là định nghĩa UI đã chốt; §11 là tình trạng dùng được; §12 là số đo chạy thật.
+Ghi ngày 2026-11-10, cập nhật 2026-11-12. Đường dẫn và số dòng lấy từ lúc khảo sát; xác minh lại trước khi dựa vào.
+Trạng thái hiện tại: §10.5–10.6 là định nghĩa UI đã chốt; §11 là tình trạng dùng được; §12 là số đo chạy thật;
+§13: hợp đồng vai và chế độ Git/worktree đã nối đầy đủ, Inventory với model thật đã qua; thử conflict thật và đội theo quota còn mở.
+§14: bước 1–5 đã code; UI brief/conflict và bước 6 còn mở. Chế độ branch mặc định tắt.
 Nhãn: **CỨNG** = server chặn thật; **MỀM** = nằm trong prompt/playbook; **PHÁT HIỆN SAU** = kiểm sau khi xảy ra.
 
 ## 1. Lỗi đã biết, cần sửa trước
@@ -786,3 +788,382 @@ ghi nhận: tổng tiền của các dòng có giá không phải hoá đơn to�
 
 Bản tóm tắt có thể đối chiếu trong repo: [`docs/verification/evidence/inventory-live-comparison.json`](docs/verification/evidence/inventory-live-comparison.json).
 Report và transcript đầy đủ giữ tại fixture; không đưa dữ liệu phiên vào git.
+
+### 12.8 Hợp đồng vai với model thật, chỉ Claude + GPT (2026-11-11)
+
+- Cùng Inventory service (§12.7): commit `6566aad`, 7 test (ban đầu 2 qua, 5 lỗi), cùng goal, `verify = npm test`.
+  Fixture riêng `D:/OMB-trial/contract-inventory-20261111`, cổng 8951; code server có bước 0 của §13.6 (chưa commit).
+- Đội: Lead `claude-opus-5-5`; Worker `gpt-6.1-terra` và `gpt-6-luna` cùng tài khoản GPT Plus 2 (`95b9…`); Tester
+  `claude-haiku-5-5`; Reviewer `claude-sonnet-5-5`. GPT Plus 1 (`1dcd…`) đã dùng 100% tuần (reset 2026-11-12 10:04 UTC);
+  `~/.codex` là tài khoản free. Grok và Antigravity chưa reset nên không dùng.
+- Kết quả: completed, lượt 4/13, 73 s. Kiểm độc lập `npm test` 7/7, chỉ 4 file `src/` đổi, `git diff --check` sạch.
+- Hợp đồng vai: Tester kết thúc `VERDICT: PASS`. Reviewer viết 5 dòng `FINDING` (1 `fix` làm tròn tiền giữa chừng,
+  4 `note`) và `REVIEW: CLEAR`. Không có `block` nên không vòng sửa; Lead ghi lý do bỏ qua `fix`/`note`. Cùng lỗi làm tròn
+  này ở §12.7 đã mở một vòng sửa.
+- **Đã sửa sau lần chạy (bảng kế hoạch, §13.3):** Lead tự viết task Tester/Reviewer nên task review tự thêm (liệt kê file theo task) không được dùng; Reviewer tự đặt
+  task id (`T-orders`), gắn chủ qua đường dẫn file vẫn được. Luna thấy file của Worker kia đổi trong thư mục chung (§13).
+
+| Chỉ số | §12.7 | Lần này |
+|---|---:|---:|
+| Lượt goal | 7/13 | 4/13 |
+| Lượt bot trong usage ledger | 10 | 6 |
+| Thời gian runner | 203 s | 73 s |
+| Token input + output | 903.484 | 566.717 |
+| Lead | 107.272 (3, GPT Sol 6.0) | 134.940 (2, Opus 5.5) |
+| Worker | 413.307 (3) | 199.684 (2) |
+| Tester | 193.796 (2) | 93.869 (1) |
+| Reviewer | 189.109 (2, GPT Sol 5.6) | 138.224 (1, Sonnet 5.5) |
+
+Chênh lệch chủ yếu do không có vòng sửa (`fix` không chặn) và đổi model Lead/Reviewer; không quy được cho riêng hợp đồng vai.
+Giá theo bảng giá API của phần Claude: $0,76 (Opus $0,547, Sonnet $0,203, Haiku $0,010); dòng GPT 6.x chưa có giá.
+
+Quota (`GET /api/plan-usage`, số nguyên %):
+
+| Tài khoản | 5 giờ trước → sau | Tuần trước → sau |
+|---|---|---|
+| Claude Pro | 36 → 43 | 62 → 62 |
+| GPT Plus 2 | 0 → 0 | 48 → 48 |
+
+- Engine Claude của fixture dùng chung tài khoản với phiên Claude Code đang điều khiển thử nghiệm (`CLAUDE_CONFIG_DIR` kế
+  thừa). 73 giây sau khi goal xong, chỉ có phiên điều khiển chạy, cửa sổ 5 giờ vẫn tăng 43 → 45. Ước phần của run: khoảng
+  6 điểm (5–7) cửa sổ 5 giờ Claude cho 367 nghìn token phía Claude, tức khoảng 15 run cỡ này mỗi cửa sổ khi bắt đầu từ 0%.
+  Phần tuần dưới 1 điểm.
+- GPT Plus 2: 200 nghìn token (phần lớn cached) không làm đổi số nguyên % nào: dưới 1 điểm mỗi cửa sổ.
+- Đo sạch hơn: fixture dùng tài khoản Claude riêng, hoặc phiên điều khiển không gọi model trong lúc chạy.
+
+### 12.9 Web bán hàng đầy đủ, bảng kế hoạch, Claude + GPT (2026-11-11)
+
+- Bài: `D:/OMB-trial/shop-20261111/work/SPEC.md` — backend `node:http`, DB `node:sqlite`, frontend thuần trong `public/`,
+  không phụ thuộc npm; auth, sản phẩm + lọc/sắp xếp/phân trang, giỏ, coupon, checkout (thuế, ship, trừ kho, giao dịch),
+  vòng đời đơn + hoàn kho khi huỷ, review chỉ khi đã nhận hàng, thống kê admin, test riêng. Test nghiệm thu ẩn
+  `acceptance.test.mjs` (10 nhóm) viết trước, đội không thấy. Fixture cổng 8961; code server có bảng kế hoạch (§13.3).
+- Đội: Lead `gpt-6-sol`, Worker `gpt-6.1-terra` (backend) và `gpt-6-luna` (frontend) cùng GPT Plus 2; Tester
+  `claude-haiku-5-5`; Reviewer `claude-sonnet-5-5`. Lead không dùng Opus vì cửa sổ 5 giờ Claude đã ở 56%.
+- Kết quả: completed, lượt 7/13, 767 s. `npm test` của đội 75/75. Nghiệm thu ẩn 9/10; nhóm hỏng là `pageSize=500`:
+  đội trả 400, test chờ kẹp về 50 — đặc tả chỉ ghi "max 50", lỗi ở đặc tả.
+- Bảng kế hoạch tới đúng Tester và Reviewer cả hai plan (Lead tự viết task kiểm). Reviewer ghi đúng mã `t1`/`t2`:
+  lần 1 `block t1` (chưa có test), `fix t2` (CSS rỗng, `onerror` nhúng chuỗi), `fix t1`…; lần 2 `REVIEW: CLEAR` và nêu lý do
+  giữ từng phát hiện cũ. Tester lần 1 kết thúc `VERDICT: ` rỗng → server hỏi lại, không tính vòng sửa.
+- Lỗi phát hiện:
+  1. **Đã sửa (§14.5 bước 1).** Plan 1 giao Tester task "Test engineer" có `writes: tests/`: Tester tự viết 900 dòng test rồi tự chấm (trái §8.4).
+     Plan check không chặn task Tester/Reviewer có `writes`. Lead tự sửa ở plan 2 (Worker t1 sở hữu test, Tester chỉ đọc)
+     sau ghi chú audit và review.
+  2. **Đã sửa (§14.5 bước 1).** `pathDeclared` (audit `writes`, `owningTask`) không khớp khai báo thư mục: `src/server.js` không thuộc `["src/"]`.
+     Audit báo sai "terra, luna changed files outside their declared writes"; tra chủ theo file thất bại với task khai thư mục.
+  3. Code nén: `src/server.js` 106 dòng, dòng dài nhất 1.629 ký tự (trung bình 196); `public/app.js` tương tự.
+     Reviewer không nêu; đặc tả không có quy tắc định dạng.
+
+| Vai | Token | Lượt | Ghi chú |
+|---|---:|---:|---|
+| Lead (Sol 6.0) | 95.398 | 3 | |
+| Terra (backend) | 555.799 | 2 | |
+| Luna (frontend) | 1.060.439 | 2 | |
+| Tester (Haiku 5.5) | 1.192.758 | 2 | lần 1 viết test, output 48 nghìn |
+| Reviewer (Sonnet 5.5) | 458.293 | 2 | |
+| Tổng | 3.362.687 | 11 | cached input 2,95 triệu |
+
+Quota (`/api/plan-usage`, trước 14:42:42 → sau 14:55:50 UTC):
+
+| Tài khoản | 5 giờ | Tuần |
+|---|---|---|
+| Claude Pro | 56 → 65 | 64 → 65 |
+| GPT Plus 2 | 0 → 4 | 48 → 49 |
+
+- GPT Plus 2 gánh 1,71 triệu token (Lead + 2 Worker): 4 điểm cửa sổ 5 giờ, 1 điểm tuần.
+- Claude 1,65 triệu token (Tester Haiku + Reviewer Sonnet): 9 điểm 5 giờ, nhưng phiên điều khiển có gọi model trong lúc
+  chạy (ghép nối trình duyệt theo yêu cầu); ước phần của run 6–7 điểm.
+
+### 12.10 Inventory service với branch riêng, giữ nguyên model (2026-11-12)
+
+- Cùng commit `6566aad00ebe1b743981eae88168ec5399e54ba7`, đề bài và 7 test như §12.8; ban đầu 2 qua, 5 lỗi.
+  Clone độc lập tại `D:/OMB-trial/branch-inventory-20261112-1794418584637/work`, database riêng và cổng 24291/24292.
+  Chạy code hiện tại, `isolatedBranches = true`, `verify = npm test`; không dùng app/database/dự án đang chạy của người dùng.
+- Giữ đúng đội §12.8: Lead `claude-opus-5-5`; Worker `gpt-6.1-terra`, `gpt-6-luna` trên GPT Plus 2;
+  Tester `claude-haiku-5-5`; Reviewer `claude-sonnet-5-5`. Dùng lại đăng nhập CLI, không đổi model khi chạy.
+- **Kết quả:** completed, 4/13 lượt goal, 6 lượt bot, 77 giây. Tester `VERDICT: PASS`; Reviewer `REVIEW: CLEAR`,
+  3 `note`, không `block`/`fix`. Hai Worker chạy đồng thời 28,479 giây ở hai worktree khác nhau. Server ghép đúng thứ tự
+  t1/t2, không conflict; Tester/Reviewer chạy ở integration. Chỉ bốn file `src/` đổi, ngoài `writes` = 0.
+- **Kiểm độc lập:** integration `npm test` 7/7, `git diff --check` sạch, test và package.json không đổi.
+  HEAD, hash index và `git status` repo gốc được so trong suốt goal, giữ nguyên; chạy test lại ở repo gốc vẫn 2 qua, 5 lỗi.
+  Branch kết quả giữ `pending`, chưa merge vào repo gốc. Đã dừng đúng cây tiến trình server fixture, cổng được giải phóng;
+  giữ worktree/data/báo cáo để đối chiếu, không sửa fixture cũ.
+
+| Chỉ số | Không branch (§12.8) | Có branch |
+|---|---:|---:|
+| Test integration | 7/7 | 7/7 |
+| Lượt goal / lượt bot | 4 / 6 | 4 / 6 |
+| Thời gian runner | 73 s | 77 s |
+| Token input + output, không setup | 566.717 | 625.224 |
+| Lead | 134.940 | 138.995 |
+| Terra | 88.995 | 160.486 |
+| Luna | 110.689 | 88.795 |
+| Tester | 93.869 | 142.166 |
+| Reviewer | 138.224 | 94.782 |
+
+- Tổng token tăng **10,32%**, thời gian tăng 4 giây; một lần chạy không chứng minh nguyên nhân hoặc tiết kiệm token.
+  Cached input 435.780 đã nằm trong input; setup riêng 13.787 token. Dòng GPT 6.x vẫn không có giá trong ledger nên
+  phần giá Claude $0,794 không phải hoá đơn toàn run.
+- Quota số nguyên trước → sau: Claude 5 giờ 41 → 47%, tuần 75 → 75%; GPT Plus 2 5 giờ 95 → 97%, tuần 63 → 63%.
+  Tài khoản dùng chung với phiên điều khiển/hoạt động khác, không quy toàn bộ chênh lệch cho fixture.
+- **Giới hạn quan sát được:** Terra tự commit task dù được dặn server sẽ commit; audit/merge vẫn xử lý đúng.
+  Reviewer tự chạy lại `npm test`, trùng việc Tester, dù hợp đồng vai đã dặn không lặp. Đây là chỉ dẫn mềm, chưa có chặn lệnh.
+  Chưa gây conflict bằng model thật trong lần này; sửa conflict đã có kiểm thử tự động trên fixture riêng.
+- Bằng chứng rút gọn: [`docs/verification/evidence/inventory-branches-live.json`](docs/verification/evidence/inventory-branches-live.json).
+  Report, transcript, usage, plan trước/sau và source runner đầy đủ nằm trong fixture, không đưa dữ liệu phiên vào git.
+
+## 13. Branch riêng cho từng Worker, hợp đồng vai, đội theo quota — thiết kế và triển khai
+
+### 13.1 Vì sao
+- Hiện mọi Worker sửa chung thư mục room; `writes` chỉ được **PHÁT HIỆN SAU** (§1.3). Worker lấn file của nhau vẫn
+  xảy ra (§12.6 bài học 1); task trùng file phải chạy lần lượt.
+- Mục tiêu: mỗi task Worker làm trong **git worktree riêng**; server merge; Tester/Reviewer kiểm bản đã ghép.
+  Không nhằm giảm token: phải đo lại (§13.7).
+
+### 13.2 Luồng
+1. Goal bắt đầu: server tạo branch tích hợp `omb/<groupKey>/<runKey>/integration` từ HEAD của thư mục room.
+2. Mỗi task Worker trong wave: `git worktree add` một branch `omb/<groupKey>/<runKey>/tasks/<sequence>-<taskKey>` tách từ đầu branch tích hợp.
+   Lane thread của task ghim `pinnedCwd` = worktree đó (móc vào `taskThread`; `pinGroupCwd` đã ghim theo thread).
+3. Worker xong: server tự commit trong worktree. Diff rỗng → không commit, ghi activity.
+4. Audit `writes` đổi thành so diff `base..branch task` với `writes` đã khai: chính xác, không còn quy nhầm cho wave.
+5. Hết wave: server merge các branch task vào branch tích hợp **theo thứ tự plan** (`--no-ff`).
+   - Sạch → wave sau tách từ kết quả đã ghép (task phụ thuộc thấy code của wave trước).
+   - Conflict → `merge --abort`, mở **task sửa conflict** cho Worker của task merge sau, trên worktree mới từ branch
+     tích hợp, kèm diff của chính task đó. Lead không tự sửa, không tự merge.
+6. Tester, Reviewer và `verify` chạy trên worktree của **branch tích hợp**.
+7. Thư mục làm việc của người dùng không bị đụng trong lúc chạy. Kết thúc goal, card goal cho chọn: merge vào branch
+   gốc (qua thẻ duyệt), giữ branch, hoặc bỏ. Không tự merge vào branch của người dùng.
+   Goal dừng giữa chừng (blocked, hết 13 lượt, hủy) → giữ branch; gửi lại goal thì chạy tiếp từ branch tích hợp.
+
+### 13.3 Hợp đồng từng vai
+Áp cho cả chế độ chung thư mục hiện tại lẫn chế độ branch; chỗ khác nhau ghi trong ô. Hiện có: `VERDICT` của Tester
+(`testerVerdict`, `server/team-roles.ts`). Reviewer mới chỉ được dặn "report findings by file and severity"
+(`withReviewTask`), server chưa đọc được: phần dưới thêm định dạng có cấu trúc.
+
+| Vai | Đầu vào | Khi nào chạy | Đầu ra | Không được |
+|---|---|---|---|---|
+| Lead | Goal, kết quả wave, báo cáo merge, `VERDICT`, phát hiện review | Mỗi lượt goal | Plan (task, `writes`, `dependsOn`), giao vòng sửa, báo hoàn thành | Nhận task, sửa code, tự merge |
+| Worker | Task + `writes`. Có branch: worktree riêng tách từ branch tích hợp | Khi task tới lượt trong wave | File đã sửa + tóm tắt ngắn (đường dẫn, kết quả kiểm; không dán file) | Ghi ngoài `writes`; có branch: ghi ngoài worktree của mình |
+| Tester | **Bảng kế hoạch** (bên dưới) + chung thư mục: thư mục room sau wave. Có branch: worktree của branch tích hợp đã merge | Một lượt sau mỗi wave có Worker (task tự thêm bởi `withTesterTask`), không theo từng task | Mỗi lỗi một dòng `FAIL: <file hoặc test> — <lỗi>`; dòng cuối `VERDICT: PASS` hoặc `VERDICT: FAIL` | Sửa file tracked → PASS vô hiệu (§8.4). Room có `verify` thì đọc kết quả server chạy, không tự chạy lại |
+| Reviewer | **Bảng kế hoạch** (bên dưới) + thay đổi của wave chia theo task. Có branch: diff `base..task` của từng task. Chung thư mục: Reviewer đọc các file trong bảng (server chưa đính kèm diff) | Một lượt mỗi wave có Worker, song song với Tester. Thêm một lượt trên diff tổng trước khi Lead báo xong, nếu có thay đổi sau lần review trước | Mỗi phát hiện một dòng `FINDING: <block\|fix\|note> <taskId> <file>:<dòng> — <mô tả>`; dòng cuối `REVIEW: CLEAR` hoặc `REVIEW: BLOCK <số>` | Ghi file; lệnh ngoài mức Ask; chạy lại build/test của Tester |
+| Server | — | — | Tạo/xoá worktree, commit, merge, chạy `verify`; gắn lỗi và phát hiện vào task và Worker sở hữu | Quyết nội dung |
+
+Server xử lý đầu ra:
+- `VERDICT: FAIL` → vòng sửa cho Worker sở hữu file trong các dòng `FAIL:` (có branch: tra diff từng branch;
+  chung thư mục: tra `writes`). Không xác định được chủ → Lead chọn.
+- `block` = sai hành vi, mất dữ liệu, lỗ hổng, vi phạm `AGENTS.md`; `fix` = nên sửa nhưng không sai yêu cầu;
+  `note` = ghi chú. Chỉ `block` chặn hoàn thành.
+- `REVIEW: BLOCK <số>` → Lead phải mở vòng sửa cho từng `block`, hoặc ghi lý do bỏ qua từng cái. Báo hoàn thành khi
+  còn `block` chưa xử lý thì bị trả lại một lần, như luật gửi Tester/Reviewer sớm. `fix`/`note` để Lead cân nhắc.
+- Thiếu dòng cuối (`VERDICT` hoặc `REVIEW`) → coi như chưa test hoặc chưa review, giao lại một lần.
+- Hoàn thành khi: Tester PASS, mọi `verify` đạt, không còn `block` chưa xử lý (thêm điều kiện thứ ba vào cổng hiện có).
+
+Vì sao một lượt Reviewer mỗi wave, không mỗi task: trên repo lớn mỗi lượt nạp 150–450 nghìn token (§12.6), review
+theo task nhân số lượt theo số Worker. Diff chia theo task vẫn gắn được phát hiện vào đúng task.
+
+**Bảng kế hoạch** (`workPlan`, `server/team-roles.ts`): mỗi task Worker của plan một dòng
+`- <mã task> · <tên Worker> · <làm gì: câu giao việc, rút gọn 160 ký tự> · <file trong writes>`. Server gắn bảng vào
+mọi task Tester và Reviewer của plan: task do server tự thêm, và cả task do Lead tự viết (giữ câu của Lead, nối bảng).
+Lý do: §12.8 Lead tự viết task Reviewer, Reviewer không biết mã `t1`/`t2` nên tự đặt (`T-orders`).
+Không cho Lead gửi kế hoạch cho Tester/Reviewer trước khi Worker làm: tốn thêm 2 lượt mỗi plan mà chưa có code để kiểm;
+lượt kiểm trước Worker đã phí 2/13 lượt trong một lần chạy thật (`d50da44de`). Góp ý kế hoạch trước, nếu cần, là tính
+năng riêng (công tắc theo room), chưa làm.
+
+**Luồng một plan:**
+1. Lead lập plan: task Worker có mã, người làm, câu giao việc, `writes`; có thể kèm task Tester/Reviewer tự viết.
+2. Server kiểm plan (vai, `writes`, vendor, gửi kiểm trước Worker) như hiện có.
+3. Server dựng bảng kế hoạch từ các task Worker.
+4. Thiếu task Tester hoặc Reviewer → server thêm, chờ mọi task Worker; có sẵn → giữ, nối bảng. Cả hai đều mang bảng.
+5. Wave Worker chạy song song; mỗi Worker chỉ thấy task của mình.
+6. Tester và Reviewer chạy song song sau Worker, cùng bảng: Tester kiểm hành vi từng task giao (`FAIL:`, `VERDICT`);
+   Reviewer đọc theo task (`FINDING` có mã task trong bảng, `REVIEW`).
+7. Server gắn kết quả vào Worker: mã task của `FINDING` trước, không có thì theo file trong `writes`.
+8. Lead nhận ghi chú có tên Worker: còn `block`/`FAIL` → plan sửa mới (task mới vào bảng, quay lại bước 3); hết → báo xong.
+9. Hoàn thành khi Tester PASS, mọi `verify` đạt, không còn `block` chưa xử lý.
+
+### 13.4 Phạm vi và công tắc
+- Trường room mới `isolatedBranches` (bật/tắt trong room panel); chỉ chạy khi thư mục room là git repo.
+  Không phải git hoặc room không có thư mục → giữ cách chung thư mục hiện tại.
+- Worktree đặt ngoài repo: `<DATA_DIR>/worktrees/<groupKey>/<runKey>/integration` hoặc `<sequence>-<taskKey>`;
+  key là hash ID, ledger giữ ID gốc. Xoá worktree sạch sau khi merge, branch giữ tới khi
+  goal kết thúc.
+- Không đổi schema DB: lane thread đã có `pinnedCwd`; bảng branch của run lưu trong file ledger ở `DATA_DIR`
+  (như ledger research). Wire của card goal thêm thông tin branch.
+
+### 13.5 Cái giá và rủi ro
+- Mỗi worktree phải cài phụ thuộc: thêm lệnh `setup` theo room (cùng kiểu `verify`, server chạy). pnpm nhẹ, hệ khác
+  có thể nặng.
+- File bị ignore (`.env`, config cục bộ) không có trong worktree: thêm danh sách file cần copy theo room.
+- Dev server và port có thể đụng nhau; đường dẫn dài trên Windows; submodule/LFS chưa hỗ trợ ở bản đầu.
+- Conflict tốn thêm lượt và token; engine gắn phiên với thư mục nên mỗi worktree là một thread mới.
+
+### 13.6 Thứ tự làm
+0. **ĐÃ LÀM (2026-11-11, chưa commit)** — hợp đồng vai (§13.3) trên chế độ chung thư mục, không cần branch: định dạng `FAIL:`/`FINDING:`/`REVIEW:`, parser
+   cạnh `testerVerdict`, cổng `block`, Tester và Reviewer nhận bảng kế hoạch (`workPlan`), giao lại khi thiếu dòng cuối. Unit + E2E fake engine.
+   Đã có: `testerFailures`, `reviewReport`, `owningTask` (`server/team-roles.ts`; khớp đường dẫn dùng chung `pathDeclared` với audit
+   `writes`); ghi chú cho Lead nêu Worker sở hữu từng dòng `FAIL:`/`FINDING`; `block` trả lại lần báo hoàn thành đầu, lần hai
+   được nhận và ghi activity "set aside"; thiếu `VERDICT`/`REVIEW` → hỏi lại một lần, không tính vòng sửa.
+   Chế độ branch đính kèm đường dẫn patch từng task cho Reviewer (2026-11-12).
+1. **ĐÃ LÀM (2026-11-12, chưa commit)** — `server/goal-branches.ts`: tạo branch tích hợp + worktree riêng,
+   commit từng task (bỏ qua diff rỗng), audit diff theo task, merge `--no-ff` theo thứ tự, gặp conflict thì abort sạch và
+   dừng trước task kế. Task tiếp theo tách từ HEAD tích hợp hiện tại; ID task lặp được cấp sequence mới.
+   Ledger `branches.json` nằm ngoài repo. Dọn chỉ worktree sạch thuộc đúng branch/repo, giữ file bẩn và bị ignore,
+   giữ branch tới khi người dùng quyết định. Chỉ merge vào branch gốc sau xác nhận đúng HEAD; discard chỉ xoá tài nguyên của run.
+   Khoá tuần tự thao tác Git; bỏ biến môi trường `GIT_*`, không chạy hook.
+   Kiểm chứng bằng Git thật trên repo tạm: độc lập Worker, merge sạch/conflict, audit rename/ngoài writes, giữ nguyên
+   HEAD/branch/index/file gốc, giữ dữ liệu chưa commit, từ chối repo bẩn/đường dẫn sai và hook không chạy.
+   Đã restore ledger, giữ/merge sau restart; gửi lại đúng goal bị dừng để tiếp tục integration. File Worker chưa commit giữ riêng.
+   Đặc tả/test: [`docs/verification/goal-branches.md`](docs/verification/goal-branches.md).
+2. **ĐÃ LÀM** — nối `runGoalRun`, lane/cwd riêng theo task, sau công tắc `isolatedBranches`.
+3. **ĐÃ LÀM** — audit `writes` và tìm chủ file theo diff đã merge; Tester, Reviewer, `verify` chạy ở integration.
+4. **ĐÃ LÀM** — task sửa conflict cho đúng Worker, tối đa 2 lần rồi `needs-input`; lượt sửa tính vào ngân sách goal.
+5. **ĐÃ LÀM** — card/panel có branch, kết quả merge và nút merge/giữ/bỏ; room panel có công tắc và file ignore cần copy.
+6. **ĐÃ LÀM** — E2E fake engine: Worker song song, merge sạch/conflict, hai lần sửa thất bại, Tester FAIL → đúng Worker,
+   Stop/tiếp tục, giữ/restart/merge, từ chối repo bẩn/HEAD đổi, discard giữ sửa đổi của người dùng. Browser thật kiểm công tắc
+   và xác nhận/huỷ merge; các fixture dùng repo/home/data tạm, không dùng app thật.
+7. **ĐÃ CHẠY (2026-11-12)** — Inventory với công tắc bật, giữ đúng model §12.8: completed 7/7, 4/13 lượt, 77 giây,
+   625.224 token; repo gốc giữ nguyên. Số đo và giới hạn ở §12.10; chưa gây conflict bằng model thật.
+
+### 13.7 Nghiệm thu
+- E2E ở §13.6 bước 6 qua; thư mục làm việc của người dùng không đổi suốt goal (so `git status` trước/sau).
+- Inventory service: completed, 7/7; so lượt, thời gian, token với §12.7 và ghi vào §12.
+- Một bài cố tình gây conflict: đúng Worker nhận task sửa, goal vẫn hoàn thành.
+
+### 13.8 Lựa chọn vận hành và phần còn cần quyết
+Áp dụng các mặc định bảo toàn dữ liệu dưới đây khi hoàn thiện bước 5 theo yêu cầu ngày 2026-11-12; chưa bật cho room sẵn có.
+1. Repo bẩn: từ chối và báo commit/stash trước, không tự commit file của người dùng.
+2. Ngoài `writes`: cảnh báo theo diff, không tự mở vòng sửa.
+3. Conflict: giới hạn riêng 2 lần rồi `needs-input`, vẫn tính chung ngân sách lượt goal.
+4. Mặc định tắt; room research tắt (giữ luật §8.2).
+5. Không tự merge vào branch gốc: owner/admin xác nhận trên card đúng HEAD, hoặc giữ/bỏ branch. Merge còn kiểm repo gốc sạch và chưa đổi HEAD.
+6. **Đã chốt 2026-11-11: một lượt mỗi wave.** Reviewer: một lượt mỗi wave trên diff chia theo task (đề xuất, §13.3) hay một lượt mỗi task (phát hiện sớm hơn,
+   tốn lượt gấp số Worker).
+7. **Đã chốt 2026-11-11: server kiểm.** Định dạng `FINDING`/`REVIEW` do server kiểm (đề xuất: thiếu dòng cuối → giao lại một lần; `block` chặn hoàn thành)
+   hay chỉ dặn trong prompt.
+8. Đội ở §13.9: đồng ý chia vai và backup như bảng, hay đổi (ví dụ Claude làm Reviewer, Gemini làm Lead).
+
+### 13.9 Đội theo quota (5 tài khoản hiện có, 2026-11-11)
+Tài khoản: Claude Pro, 2 ChatGPT Plus, Grok gói thấp, Antigravity (gói Google AI). Không hãng nào công bố hạn mức
+tuyệt đối; Claude, Codex và Antigravity tính theo cửa sổ 5 giờ + hạn mức tuần, Grok chỉ có hạn mức tuần (tra cứu
+2026-11-11, phần lớn nguồn bên thứ ba). Gói Grok thấp nhất có thể là pool nhỏ nhất.
+Token theo vai đã đo: dự án nhỏ (§12.7) Lead 107 nghìn, Worker 115–298 nghìn, Tester 194 nghìn, Reviewer 189 nghìn;
+repo lớn (§12.6) Reviewer 895 nghìn, Worker 805–844 nghìn, Tester 546 nghìn, Lead 437 nghìn.
+
+| Vai | Tài khoản | Backup AI | Lý do |
+|---|---|---|---|
+| Lead | Claude Pro, Opus 5.5 | Antigravity (Gemini) | Vai tốn ít nhất nhưng quyết chất lượng plan; Opus làm Lead đã chạy tốt (§12.6) |
+| Worker 1 | ChatGPT Plus #1, Codex | — | Vai tốn nhiều nhất; Codex làm Worker đã chạy tốt (§12.5, §12.7) |
+| Worker 2 | ChatGPT Plus #2, Codex | — | Hai cửa sổ 5 giờ độc lập; một bên hết lượt thì Lead giao task cho bên kia (README, "Out of AI usage") |
+| Tester | Grok | Antigravity (Gemini) | Room đặt `verify` để server chạy test; Tester chỉ đọc kết quả và báo `VERDICT`, nên tốn ít |
+| Reviewer | Antigravity, **model Gemini** | Grok | Khác vendor với Worker (openai). Chọn model Claude trong Antigravity thì vendor là anthropic (`modelVendor`) |
+
+- Backup AI dùng chung pool với vai khác (Antigravity vừa là Reviewer vừa là backup của Lead và Tester): theo dõi khi
+  chạy goal dài. Backup đổi vendor → kiểm lại luật vendor (§8.5); Grok (xai) và Gemini (google) đều khác openai.
+- Grok và Antigravity chưa chạy trong các lần thử thật ở §12. Tester thiếu `VERDICT` hoặc Reviewer không theo định
+  dạng `FINDING`/`REVIEW` (§13.3) → đổi vai Tester và Reviewer cho nhau.
+- Đo quota thật: chạy Inventory service (§12.7) với đội này; ghi % đã dùng trên dashboard từng tài khoản trước và sau,
+  ghép với token theo vai trong usage ledger → số goal mỗi 5 giờ và mỗi tuần của từng tài khoản; ghi vào §12.
+
+## 14. Quy tắc theo lớp, dự án có sẵn, conflict real-time, bàn trước rồi `/goal` — kế hoạch (2026-11-11, chưa code)
+
+### 14.1 Quy tắc nào đặt ở lớp nào
+| Lớp | Dùng cho | Mức |
+|---|---|---|
+| Server (code + `verify`) | Việc không được sai, không tin bot tự giữ | CỨNG |
+| Chỉ dẫn dự án (`AGENTS.md` trong repo, chỉ dẫn room) | Quy ước riêng từng dự án: phong cách code, lệnh build/test, vùng cấm | MỀM; CỨNG khi có lệnh `verify` kiểm |
+| Skill/playbook | Cách làm lặp lại ở nhiều dự án: checklist review, viết test, viết đặc tả | MỀM; tối đa 3 playbook mỗi việc theo từ khoá, không cấp quyền hay công cụ (`installed-playbooks.ts`) |
+| MCP | Năng lực/dữ liệu bot không tự có: trình duyệt, sơ đồ code, issue tracker | Công cụ, không phải luật |
+
+Áp vào §12.9: Tester/Reviewer có `writes` → server từ chối trong plan check; khai thư mục → sửa `pathDeclared`; code nén →
+chỉ dẫn dự án + lệnh `verify` kiểm độ dài dòng/lint + mục "dễ đọc" trong skill review; không ai thử UI → MCP trình duyệt +
+skill kiểm thử UI; đặc tả mơ hồ → skill viết đặc tả, Lead hỏi lại thay vì đoán.
+
+### 14.2 Làm tiếp dự án lớn có sẵn
+1. Hồ sơ dự án theo room: quy ước (`AGENTS.md`/`CLAUDE.md`), lệnh build/test/lint, sơ đồ module, vùng cấm (sinh tự động,
+   vendor, migration), lệnh `setup`. Mục đích: bớt phần mỗi lượt tự khám phá repo (150–450 nghìn token/lượt, §12.6).
+2. Trạng thái gốc: server chạy `verify` trước goal, ghi test vốn đã hỏng để Tester không quy cho Worker
+   (`server/runtime-coordinator.test.ts` từng hỏng sẵn trên `HEAD`: expected thiếu `level: "ask"`; đã sửa assertion theo
+   hợp đồng projection hiện tại khi kiểm chứng bước 4 ngày 2026-11-11).
+3. Phạm vi goal: tiêu chí nghiệm thu, vùng được sửa, vùng cấm.
+4. Kiểm hai tầng: mỗi vòng test vùng liên quan; bộ đầy đủ một lần trước khi hoàn thành.
+5. Chế độ branch (§13) cho dự án có sẵn.
+
+### 14.3 Conflict trong lúc làm: server theo dõi, Lead đánh giá
+Không bot nào theo dõi real-time được: Lead chỉ chạy giữa các lượt. Server theo dõi (luôn chạy, không tốn token).
+- Phát hiện: trong lúc wave chạy, server quét thư mục làm việc vài giây một lần (`git status` + hash như audit `writes`)
+  và gắn thay đổi với lane/bot qua lệnh sửa file engine báo về.
+- **Đã chốt 2026-11-11** — hai Worker sửa cùng file: server (1) gửi tin vào lượt đang chạy của Worker đến sau: "file X
+  đang do <task>/<Worker> sửa, đừng sửa, báo lại Lead"; (2) ghi conflict cho Lead (file, hai task, ai sửa trước) để Lead
+  đánh giá ở lượt kế: giao một người gộp, đổi plan, hoặc hỏi người dùng.
+- Thay đổi không thuộc bot nào (người dùng sửa repo) → cảnh báo Lead và người dùng; ở chế độ branch không ảnh hưởng.
+- Merge conflict (§13) → task sửa conflict cho đúng Worker; bất đồng Reviewer/Worker và FAIL lặp → luật hiện có
+  (3 vòng sửa, `block` trả lại một lần), hết thì thẻ hỏi người dùng.
+- Hiện real-time: Văn phòng (đường nối đỏ, dấu conflict), dòng activity trong room, "Cần bạn" khi cần người dùng quyết.
+
+### 14.4 Bàn với Lead trước rồi mới `/goal`
+Hiện có (đọc code 2026-11-11):
+- Lượt goal của Lead chạy trong thread room, cùng bộ dựng prompt với lượt chat: thấy **30 tin gần nhất** của room
+  (`GROUP_CONTEXT_MESSAGES`, `server/host/room-transcript.ts`) và phiên engine của chính Lead trong thread đó.
+  Bàn bằng `/chat` rồi gửi `/goal` thì Lead thấy cuộc trao đổi nếu còn trong 30 tin.
+- Room có Lead tự biến tin "giao việc" thành goal; muốn chỉ bàn thì mở đầu tin bằng `/chat`.
+- Rủi ro: goal chạy thêm tin vào room, cuộc trao đổi trôi khỏi cửa sổ 30 tin; câu `/goal` là thứ duy nhất được lưu trên
+  card. Worker/Tester/Reviewer chạy trong lane riêng, không thấy cuộc trao đổi, chỉ thấy task Lead viết.
+
+Đề xuất "goal brief":
+1. Người dùng bàn với Lead bằng `/chat`, rồi gửi `/goal` (có thể kèm câu ngắn: "làm theo những gì vừa chốt").
+2. Lượt goal đầu tiên, Lead viết **goal brief** trong chính câu trả lời lập plan (không thêm lượt): mục tiêu, phạm vi
+   làm/không làm, tiêu chí nghiệm thu, ràng buộc, câu hỏi còn mở.
+3. Server lưu brief trên goal run (hiện trên card). Còn câu hỏi mở → `needs-input`, chờ người dùng trả lời.
+4. Mọi lượt Lead sau nhận brief, không phụ thuộc cửa sổ 30 tin. Tester và Reviewer nhận tiêu chí nghiệm thu kèm bảng kế
+   hoạch (§13.3) để kiểm theo đúng điều đã chốt.
+5. Room research giữ file goal đã khoá (§8.2); brief không thay file goal.
+
+### 14.5 Thứ tự
+1. **ĐÃ LÀM (2026-11-11, chưa commit)** — sửa server: chặn Tester/Reviewer có `writes` (`teamPlanProblem`); `pathDeclared`
+   hiểu thư mục (`src/`, `tests` khớp file bên trong, không khớp `srcs/`; khai rỗng `./` bị bỏ qua). Unit + test goal loop.
+2. **ĐÃ LÀM phía server (2026-11-11, chưa commit)** — goal brief (§14.4): trường `brief` trong envelope plan đầu
+   (`parseGoalBrief`, kiểu `GoalBrief` ở `shared/group-goal-run.ts`); chỉ room có vai + chia task; plan đầu thiếu brief
+   bị trả lại một lần rồi chạy tiếp; `openQuestions` → `needs-input`; brief lưu trên card (`goalRun.brief`,
+   `goal-cards.ts`), mọi lượt Lead sau nhận brief, Tester/Reviewer nhận `acceptance` kèm bảng kế hoạch. Unit + E2E fake
+   engine. **Chưa có UI** hiện brief trên card/panel goal: để người dùng định nghĩa trong Neon (`GoalRunCard`/`GoalRunPanel`).
+3. **ĐÃ LÀM phía server (2026-11-11, chưa commit)** — theo dõi conflict trong lúc wave chạy (§14.3), `watchWaveConflicts`
+   (`server/goal-conflicts.ts`): mỗi 5 giây (và một lần sau khi wave xong) lấy file đổi từ đầu wave, gắn với Worker qua lệnh
+   sửa file trong event log của lane (`editedPaths`, `server/edit-events.ts`: Claude `Write`/`Edit`/`MultiEdit`, Codex
+   `edit`). Worker sửa file thuộc `writes` task khác, hoặc hai Worker cùng sửa file chưa ai khai → gửi tin vào lượt đang chạy
+   của Worker sau (engine nhận được tin giữa lượt: Claude, Codex; Grok, Antigravity, OpenCode, ZCode, ACP thì không), ghi
+   dòng activity ngay, lưu trên card (`goalRun.conflicts`, tối đa 20), hết wave ghi chú cho Lead đánh giá. Unit test.
+   Giới hạn: file ghi bằng lệnh shell (Codex trên Windows hay dùng PowerShell — ở §12.9 `src/server.js`, `styles.css`) không
+   gắn được Worker, chỉ audit `writes` sau wave thấy. **Chưa có UI** trên Văn phòng: dữ liệu `goalRun.conflicts`
+   `{ file, ownerTask, ownerBotId, ownerName, otherTask, otherBotId, otherName, steered, at }` để người dùng định nghĩa trong Neon.
+4. **ĐÃ LÀM phía server (2026-11-11, chưa commit)** — hồ sơ dự án + trạng thái gốc (§14.2): room `projectProfile`
+   qua API (`instructions`, `moduleMap`, `protectedPaths`, `setup`); lưu trong `groups.json`, `null` xoá hồ sơ.
+   Room có hồ sơ chạy setup rồi `verify` trước lượt bot đầu, không tốn lượt AI; setup lỗi → `blocked`, verify lỗi vẫn
+   cho Lead lập kế hoạch sửa. Kết quả gốc lưu trên card (`goalRun.baseline`: thời gian, setup/checks, mã thoát thực,
+   mã mong đợi, output đã che bí mật tối đa 1.000 ký tự), giữ qua tiến độ và kết thúc; mọi lượt Lead và task Worker,
+   Tester, Reviewer nhận hồ sơ + baseline. Cổng verify cuối không bỏ qua lỗi có sẵn. Stop huỷ cả cây tiến trình lệnh.
+   Không có hồ sơ → verify chỉ chạy cuối như trước. Chưa cấu hình verify → ghi rõ baseline chưa kiểm chứng.
+   `protectedPaths` là chỉ dẫn MỀM, chưa sandbox; chỉ dẫn repo là tham chiếu, không tự đọc file; chưa tự khám phá lệnh,
+   chưa có UI hồ sơ/baseline, chưa tách lệnh test liên quan mỗi vòng với bộ đầy đủ cuối goal.
+   Cách cấu hình và fixture cách ly: [`docs/verification/room-project.md`](docs/verification/room-project.md).
+   Kiểm chứng: bộ hồi quy 16 file — 359 test qua, 1 bỏ qua; sau tách module và sửa phục hồi thư mục, các test liên quan
+   chạy lại đều qua. `room-coordination.e2e` 33/33, `runtime-coordinator` 109/109; typecheck, lint và kiểm tài liệu sạch.
+   Guard độ dài file còn báo `server/index.ts`, `shared/wire.ts`, `src/components/GroupView.tsx` — cả ba đã vượt ngưỡng
+   trên HEAD; không nâng giới hạn. `group-goal-run.ts` đã tách brief/conflict, còn 994 dòng.
+5. **ĐÃ LÀM (2026-11-12, chưa commit)** — chế độ branch (§13): nối đầy đủ Git, vòng goal, lane/cwd, cổng kiểm,
+   task sửa conflict, restore và UI merge/giữ/bỏ. Mặc định tắt, không sửa repo gốc trước khi người dùng xác nhận merge.
+   Setup chạy trong từng worktree; chỉ copy file ignore được khai báo, từ chối symlink/submodule/LFS. Engine idle của lane
+   được giải phóng trước khi dọn worktree trên Windows; không giết phiên đang làm hoặc process chia sẻ để dọn folder.
+   Đã qua fixture API và browser riêng; bài Inventory với model thật đã chạy ở §12.10, completed 7/7.
+   Kiểm chứng cuối: 184 test chức năng/hồi quy qua; 24 test route + ACP qua; 31 test CLI/card/cài đặt qua (1 test parallel room
+   bị bỏ qua theo điều kiện suite); 7 test tài liệu qua. Loop 85 test và E2E branch chạy lại sau khi sửa tìm chủ file đều qua;
+   E2E chạy lại lần cuối kiểm retry merge sau restart cũng qua. Hai test Claude giải phóng phiên idle qua.
+   Browser 1366/390px: không tràn ngang, huỷ không đổi repo, xác nhận merge đổi đúng file, console không có error.
+   `pnpm build` (gồm typecheck) và lint qua. Guard độ dài file vẫn báo đúng ba file đã vượt ngưỡng trên HEAD:
+   `server/index.ts`, `shared/wire.ts`, `src/components/GroupView.tsx`; không nâng ngưỡng. Bằng chứng browser tại
+   `.omb-scratch/verify-evidence/goal-branches/`; recipe và giới hạn tại `docs/verification/goal-branches.md`.
+6. Skill (review, viết test, nhận dự án có sẵn, viết đặc tả) và MCP (trình duyệt; tuỳ chọn sơ đồ code).
+
+### 14.6 Cần quyết
+1. **Đã chốt 2026-11-11:** chỉ dừng khi brief có câu hỏi mở; không thêm bước duyệt.
+2. **Đã chốt 2026-11-11:** không đổi UI. `/goal` trong ô nhập chỉ chuyển chế độ, vẫn cần chữ; gõ ngắn ("làm theo những gì vừa
+   chốt") là đủ, brief của Lead giữ phần đã bàn.
+3. Skill/MCP: dùng playbook có sẵn trong app, hay người dùng tự thêm MCP (ví dụ trình duyệt)?

@@ -42,4 +42,17 @@ describe("runVerifyCommand on this platform's shell", () => {
     const missing = await runVerifyCommand({ id: "missing", command: "omb-no-such-command-xyz" }, dir);
     expect(missing.exitCode).not.toBe(0);
   });
+
+  it("cancels the command tree on Stop, and never starts a pre-cancelled command", async () => {
+    const controller = new AbortController();
+    const pending = runVerifyCommand({ id: "setup", command: `${node} -e "require('fs').writeFileSync('setup-started.txt', 'x'); setTimeout(() => require('fs').writeFileSync('after-stop.txt', 'x'), 3000)"` }, dir, controller.signal);
+    await expect.poll(() => existsSync(join(dir, "setup-started.txt")), { timeout: 5_000 }).toBe(true);
+    controller.abort();
+    expect((await pending).exitCode).toBeNull();
+    const skipped = await runVerifyCommand({ id: "skipped", command: `${node} -e "require('fs').writeFileSync('skipped.txt', 'x')"` }, dir, controller.signal);
+    expect(skipped).toMatchObject({ exitCode: null, output: "Cancelled" });
+    expect(existsSync(join(dir, "skipped.txt"))).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 3_500));
+    expect(existsSync(join(dir, "after-stop.txt"))).toBe(false);
+  }, 15_000);
 });

@@ -1,0 +1,126 @@
+{
+  "dateLocal": "2026-11-12",
+  "timezone": "Asia/Saigon",
+  "project": "inventory-service",
+  "fixtureRoot": "D:/OMB-trial/branch-inventory-20261112-1794418584637",
+  "baselineCommit": "6566aad00ebe1b743981eae88168ec5399e54ba7",
+  "goal": "Make every test in this project pass, including the new bulk-discount rule. Fix the code in src/, not the tests.",
+  "verificationCommand": "npm test",
+  "initialTests": {
+    "pass": 2,
+    "fail": 5
+  },
+  "models": {
+    "lead": "claude-opus-5-5",
+    "terra": "gpt-6.1-terra",
+    "luna": "gpt-6-luna",
+    "tester": "claude-haiku-5-5",
+    "reviewer": "claude-sonnet-5-5"
+  },
+  "previousSameModels": {
+    "noteSection": "12.8",
+    "status": "completed",
+    "testsPassed": 7,
+    "goalTurns": 4,
+    "modelTurns": 6,
+    "seconds": 73,
+    "tokensExcludingSetup": 566717,
+    "roleTokens": {
+      "lead": 134940,
+      "terra": 88995,
+      "luna": 110689,
+      "tester": 93869,
+      "reviewer": 138224
+    }
+  },
+  "isolatedBranches": {
+    "status": "completed",
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "goalTurns": 4,
+    "modelTurns": 6,
+    "seconds": 77,
+    "tokensExcludingSetup": 625224,
+    "inputTokens": 619306,
+    "outputTokens": 5918,
+    "cachedInputTokensIncludedInInput": 435780,
+    "setupTokens": 13787,
+    "roleTokens": {
+      "lead": 138995,
+      "terra": 160486,
+      "luna": 88795,
+      "tester": 142166,
+      "reviewer": 94782
+    },
+    "workerIntervalsUtc": {
+      "terra": {
+        "startedAtUtc": "2026-11-11T17:36:53.378Z",
+        "endedAtUtc": "2026-11-11T17:37:21.857Z"
+      },
+      "luna": {
+        "startedAtUtc": "2026-11-11T17:36:53.344Z",
+        "endedAtUtc": "2026-11-11T17:37:24.220Z"
+      }
+    },
+    "workersOverlapSeconds": 28.479,
+    "reviewerVerdict": "REVIEW: CLEAR",
+    "testerVerdict": "VERDICT: PASS",
+    "reviewFindings": {
+      "block": 0,
+      "fix": 0,
+      "note": 3
+    },
+    "conflicts": 0,
+    "repairRounds": 0,
+    "branchDecision": "pending",
+    "originalHeadIndexAndStatusUnchangedThroughoutGoal": true,
+    "finalIndependentChecks": {
+      "integrationTestsPassed": 7,
+      "integrationTestsFailed": 0,
+      "originalTestsPass": 2,
+      "originalTestsFail": 5,
+      "gitDiffCheck": "pass",
+      "testsAndPackageUnchanged": true
+    },
+    "changedFiles": [
+      "src/inventory.js",
+      "src/money.js",
+      "src/orders.js",
+      "src/report.js"
+    ],
+    "usdTotalComplete": false
+  },
+  "observedLimitations": [
+    "Terra committed its own assigned task despite the instruction that the server commits; branch audit and merge still succeeded.",
+    "Reviewer reran npm test despite the read-only review role asking it not to duplicate Tester checks.",
+    "No real-model conflict occurred in this trial; conflict repair remains covered by automated isolated fixtures."
+  ],
+  "quotaUsedPercent": {
+    "before": {
+      "claude": {
+        "fiveHourUsedPercent": 41,
+        "weeklyUsedPercent": 75
+      },
+      "codexOrca2": {
+        "fiveHourUsedPercent": 95,
+        "weeklyUsedPercent": 63
+      }
+    },
+    "after": {
+      "claude": {
+        "fiveHourUsedPercent": 47,
+        "weeklyUsedPercent": 75
+      },
+      "codexOrca2": {
+        "fiveHourUsedPercent": 97,
+        "weeklyUsedPercent": 63
+      }
+    }
+  },
+  "interpretation": "Same seed commit, goal, verification command and five models as the last Inventory trial. Tokens increased 10.32% and runner time increased four seconds. One run does not establish causality or token savings. Shared accounts and rounded usage percentages prevent attributing quota changes exclusively to this goal. GPT 6.x rows have no price in the ledger; priced Claude cost is not the full run bill.",
+  "teardown": {
+    "at": "2026-11-11T17:37:55.634Z",
+    "stopped": true,
+    "pid": 35776
+  }
+}

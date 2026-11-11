@@ -7,7 +7,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { rm as removeDirectory } from "node:fs/promises";
+import { readFile, rm as removeDirectory } from "node:fs/promises";
+import { editedPaths } from "./edit-events.ts";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
 import { basename, join } from "node:path";
@@ -235,6 +236,12 @@ import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { goalWavesEnabled } from "./lead-cap.ts";
 import { writesOutside, writesSnapshot } from "./writes-audit.ts";
 import { runVerifyCommand } from "./verify-run.ts";
+import { createGoalBranchRuns } from "./host/goal-branch-runs.ts";
+import { createGoalBranchRoutes } from "./routes/goal-branches.ts";
+import { branchPaths } from "./goal-branches.ts";
+import { createGoalBranchWorkflow, GoalBranchWorkflowError } from "./goal-branch-workflow.ts";
+import { checkedVerifyCommands } from "./verify-config.ts";
+import { checkedProjectProfile } from "./room-project.ts";
 import { modelVendor } from "./model-vendor.ts";
 import { loadResearchGoal } from "./research-goal.ts";
 import { prepareResearchRun } from "./research-run.ts";
@@ -3763,34 +3770,23 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     patch.goalFileHash = loaded.hash;
   }
   if (body.verify !== undefined) {
-    if (body.verify === null) patch.verify = undefined;
-    else {
-      if (!Array.isArray(body.verify) || body.verify.length === 0 || body.verify.length > 8) {
-        throw Object.assign(new Error("verify must be a list of 1 to 8 commands"), { status: 400 });
-      }
-      patch.verify = body.verify.map((entry: unknown) => {
-        if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw Object.assign(new Error("each verify entry must be an object"), { status: 400 });
-        const { id, command, cwd, timeoutSec, expectExit } = entry as Record<string, unknown>;
-        if (typeof id !== "string" || !id.trim() || id.length > 60) throw Object.assign(new Error("verify id must be 1-60 characters"), { status: 400 });
-        if (typeof command !== "string" || !command.trim() || command.length > 2_000) throw Object.assign(new Error("verify command must be 1-2000 characters"), { status: 400 });
-        if (cwd !== undefined && (typeof cwd !== "string" || cwd === "" || cwd.includes("..") || /[/\\]$/.test(cwd) || /^[/\\]|^[A-Za-z]:/.test(cwd))) {
-          throw Object.assign(new Error("verify cwd must be a relative subfolder of the room's working folder"), { status: 400 });
-        }
-        if (timeoutSec !== undefined && (typeof timeoutSec !== "number" || !Number.isFinite(timeoutSec) || timeoutSec < 1 || timeoutSec > 3_600)) {
-          throw Object.assign(new Error("verify timeoutSec must be between 1 and 3600"), { status: 400 });
-        }
-        if (expectExit !== undefined && (typeof expectExit !== "number" || !Number.isInteger(expectExit))) {
-          throw Object.assign(new Error("verify expectExit must be an integer"), { status: 400 });
-        }
-        return {
-          id: id.trim(),
-          command: command.trim(),
-          ...(cwd !== undefined ? { cwd } : {}),
-          ...(timeoutSec !== undefined ? { timeoutSec } : {}),
-          ...(expectExit !== undefined ? { expectExit } : {}),
-        };
-      });
-    }
+    patch.verify = body.verify === null ? undefined : checkedVerifyCommands(body.verify);
+  }
+  if (body.isolatedBranches !== undefined) {
+    if (typeof body.isolatedBranches !== "boolean" || existing.dm) throw Object.assign(new Error("isolatedBranches must be a boolean on a room"), { status: 400 });
+    if (channelTaskBlocked(existing)) throw Object.assign(new Error("Stop the room before changing isolated branches"), { status: 409 });
+    if (body.isolatedBranches && (body.kind ?? existing.kind) === "research") throw Object.assign(new Error("Isolated branches are disabled for research rooms"), { status: 400 });
+    patch.isolatedBranches = body.isolatedBranches;
+  }
+  if (body.kind === "research") patch.isolatedBranches = false;
+  if (body.branchFiles !== undefined) {
+    if (existing.dm || channelTaskBlocked(existing)) throw Object.assign(new Error("Stop the room before changing worktree files"), { status: 409 });
+    if (!Array.isArray(body.branchFiles) || body.branchFiles.length > 16 || body.branchFiles.some((path) => typeof path !== "string" || path.length > 200)) throw Object.assign(new Error("branchFiles must be at most 16 relative paths"), { status: 400 });
+    try { patch.branchFiles = branchPaths(body.branchFiles); } catch { throw Object.assign(new Error("branchFiles must stay inside the room folder and exclude .git"), { status: 400 }); }
+  }
+  if (body.projectProfile !== undefined) {
+    if (existing.dm) throw Object.assign(new Error("direct-message channels cannot have a project profile"), { status: 400 });
+    patch.projectProfile = body.projectProfile === null ? undefined : checkedProjectProfile(body.projectProfile);
   }
   if (Object.prototype.hasOwnProperty.call(body, "turnTimeoutMinutes")) {
     if (!existing.dm) {
@@ -6234,6 +6230,13 @@ function continueComputerSelection(threadId: string, generation: string | undefi
 const runningTurnEngines = new Map<string, NonNullable<ReturnType<typeof registry.get>>>();
 function runningTurnInstance(bot: BotRecord | null | undefined, threadId: string): ReturnType<typeof registry.get> {
   return runningTurnEngines.get(threadId) ?? (bot ? registry.get(bot.modelSelection.instanceId) : null);
+}
+
+/** The member's own lane threads opened for work from this room thread. */
+function roomLaneThreads(botId: string, roomThreadId: string): string[] {
+  return store.tasks(botId)
+    .filter((task) => task.openedBy?.kind === "work" && task.openedBy.roomLane && task.openedBy.threadId === roomThreadId)
+    .map((task) => task.threadId);
 }
 
 function engineSteersImages(instance: ReturnType<typeof registry.get> | undefined): boolean {
@@ -9687,6 +9690,7 @@ const MAX_GROUP_HOPS = 1;
 
 type GroupMemberTurnOutcome = GoalStepOutcome;
 type GroupTurnOrchestration = {
+  cwd?: string;
   roomHandoffId?: string;
   resumed?: boolean;
   systemInstructions: string;
@@ -10267,7 +10271,7 @@ async function runClaimedGroupMemberTurn(
   // The room's folder pins at its first dispatch, so a room that already worked somewhere never has its folder moved.
   const cwd = workspace && cloudGuestOpened(threadId)
     ? ensureTaskWorkspaceWithSkills(bot.id, threadId, skillsHost.turnImports(bot, threadId, instance))
-    : groupTurnCwd(workspace, () => store.pinGroupCwd(readyGroup.id, threadId));
+    : orchestration?.cwd ?? groupTurnCwd(workspace, () => store.pinGroupCwd(readyGroup.id, threadId));
   assertRoomFolder(cwd); if (workspace && bot.memoryEnabled !== false) beginMemoryTurn(teamHost.layer(bot.id, threadId), threadId); if (workspace) botBox.lend(bot.id, threadId, teamHost.layerDirs(bot.id, threadId));
   {
     const drift = checkSoulDrift(bot.id, bot.soul ?? "", bot.soulHash ?? "");
@@ -10844,7 +10848,7 @@ async function runGoalWaveOnTree(args: {
   coordinatorBot: BotRecord;
   run: NonNullable<GroupTurnOperation["goalRun"]>;
   cancelled(): boolean;
-  batch: Array<{ bot: BotRecord; role?: string; assignment: string; readOnly?: boolean }>;
+  batch: Array<{ bot: BotRecord; role?: string; assignment: string; readOnly?: boolean; cwd?: string }>;
 }): Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }>> {
   const idle = (botId: string, outcome: GroupMemberTurnOutcome, stopReason?: string | null) => ({ botId, ran: false, replyText: "", outcome, stopReason });
   const room = store.group(args.groupId);
@@ -10854,7 +10858,7 @@ async function runGoalWaveOnTree(args: {
   const sender = { id: args.coordinatorBot.id, name: args.coordinatorBot.name };
   const children = args.batch.map((task) => ({
     ...task,
-    lane: roomJobs.openLane(room, args.threadId, task.bot.id, sender, task.assignment),
+    lane: roomJobs.openLane(room, args.threadId, task.bot.id, sender, task.assignment, task.cwd ? { cwd: task.cwd } : undefined),
     childId: undefined as string | undefined,
     refusal: undefined as string | undefined,
   }));
@@ -10913,6 +10917,7 @@ async function runGroupGoalStep(args: {
   instructions: string;
   lead?: BotRecord;
   lane?: { threadId: string; brief: string };
+  cwd?: string;
 }): Promise<{ ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }> {
   const run = args.operation.goalRun;
   if (!run || args.operation.cancelled || run.turnCount >= run.maxTurns) {
@@ -10956,6 +10961,7 @@ async function runGroupGoalStep(args: {
         args.skillAuthoringClaim,
         {
           systemInstructions: args.instructions,
+          cwd: args.cwd,
           followMentions: false,
           result,
           goalRunId: run.runId,
@@ -10990,6 +10996,13 @@ async function runGroupGoalStep(args: {
   }
 }
 
+const goalBranchRuns = createGoalBranchRuns({ store, dataDir: DATA_DIR, release: async (groupId, threadId) => {
+  const threads = [threadId, ...(store.group(groupId)?.memberIds ?? []).flatMap((id) => roomLaneThreads(id, threadId))];
+  for (const thread of threads) for (const instance of registry.instances()) {
+    if (instance.adapter.releaseIdleThread && !await instance.adapter.releaseIdleThread(thread)) throw new Error("A goal engine still holds this worktree; wait for its turn to stop before deciding");
+  }
+} });
+
 async function runGroupGoalOperation(args: {
   groupId: string;
   threadId: string;
@@ -11001,18 +11014,20 @@ async function runGroupGoalOperation(args: {
   if (!run) return;
   const skillAuthoringClaim = { claimed: false };
   const room = store.group(args.groupId);
+  const pinRoomFolder = () => {
+    const task = store.groupTaskByThread(args.groupId, args.threadId);
+    return task?.pinnedCwd === undefined && !room?.cwd ? null : store.pinGroupCwd(args.groupId, args.threadId);
+  };
   const research = room?.kind === "research" ? prepareResearchRun({
     groupId: args.groupId,
     goalFile: room.goalFile,
     goalFileHash: room.goalFileHash,
-    folder: store.pinGroupCwd(args.groupId, args.threadId) ?? room.cwd ?? undefined,
+    folder: pinRoomFolder() ?? room.cwd ?? undefined,
     runId: run.runId,
     dataDir: DATA_DIR,
     eventsDir: EVENTS_DIR,
     members: args.members,
-    memberThreads: (botId) => [args.threadId, ...store.tasks(botId)
-      .filter((task) => task.openedBy?.kind === "work" && task.openedBy.roomLane && task.openedBy.threadId === args.threadId)
-      .map((task) => task.threadId)],
+    memberThreads: (botId) => [args.threadId, ...roomLaneThreads(botId, args.threadId)],
     instanceOf: (botId) => store.bot(botId)?.modelSelection.instanceId,
   }) : undefined;
   if (research && !research.ok) {
@@ -11020,8 +11035,35 @@ async function runGroupGoalOperation(args: {
     return;
   }
   const wiring = research?.wiring;
+  const note = (text: string) => store.appendMessage(args.threadId, { role: "bot", kind: "activity", from: { botId: args.coordinator.id, name: args.coordinator.name, color: args.coordinator.color }, tool: { name: text, ok: false } });
+  try {
+  const isolated = room ? await goalBranchRuns.prepare(room, args.threadId, run.runId, run.goal, pinRoomFolder()) : {};
+  if (args.operation.cancelled) { if (isolated.manager) goalCards.branches(args.threadId, run, isolated.manager.card()); return; }
+  if (isolated.notice) note(isolated.notice);
+  const manager = isolated.manager;
+  const workFolder = () => manager?.state().cwd ?? pinRoomFolder();
+  const branchFiles = [...(room?.branchFiles ?? [])];
+  const setup = structuredClone(room?.projectProfile?.setup ?? []);
+  const prepare = async (cwd: string) => {
+    if (manager && branchFiles.length) await manager.copyFiles(cwd, branchFiles);
+    for (const command of setup) {
+      if (args.operation.cancelled) return;
+      const result = await runVerifyCommand(command, cwd, args.operation.cancellation.signal);
+      if (!args.operation.cancelled && result.exitCode !== (command.expectExit ?? 0)) throw new GoalBranchWorkflowError(`Worktree setup ${command.id} failed: ${result.output.slice(-300)}`);
+    }
+  };
+  if (manager) {
+    goalCards.branches(args.threadId, run, manager.card());
+    if (branchFiles.length && isolated.created) await manager.copyFiles(manager.state().cwd, branchFiles);
+  }
+  const branchWork = manager ? createGoalBranchWorkflow({ manager, run, lead: args.coordinator, roleOf: (id) => roomRoles(room)?.[id], botOf: (id) => store.bot(id) ?? undefined,
+    cancelled: () => args.operation.cancelled, prepare,
+    execute: (batch) => runGoalWaveOnTree({ groupId: args.groupId, threadId: args.threadId, coordinatorBot: args.coordinator, run, cancelled: () => args.operation.cancelled, batch }),
+    note, update: (card) => goalCards.branches(args.threadId, run, card),
+  }) : undefined;
   await runGoalRun({
     run,
+    branchWork,
     coordinator: args.coordinator,
     members: args.members,
     tasksAllowed: Boolean(room && !room.dm) && goalWavesEnabled({ memberCount: args.members.filter((member) => !member.hidden).length, goalWaves: room?.goalWaves }),
@@ -11035,21 +11077,26 @@ async function runGroupGoalOperation(args: {
       const task = store.createGroupTask(args.groupId, `${group.name} · ${snippet || "goal task"}`, false);
       return task ? { threadId: task.threadId } : undefined;
     },
-    step: (bot, coordinator, instructions, lane) => runGroupGoalStep({ ...args, bot, skillAuthoringClaim, coordinator, instructions, lead: args.coordinator, lane }),
+    step: (bot, coordinator, instructions, lane) => runGroupGoalStep({ ...args, bot, skillAuthoringClaim, coordinator, instructions: manager ? `${instructions}\nServer Git state: ${JSON.stringify(manager.card())}. Work only in the integration folder as Lead; implementation belongs to Worker tasks.` : instructions, lead: args.coordinator, lane, cwd: manager?.state().cwd }),
     dispatchWave: (batch) => args.operation.goalRun
       ? runGoalWaveOnTree({ groupId: args.groupId, threadId: args.threadId, coordinatorBot: args.coordinator, run: args.operation.goalRun, cancelled: () => args.operation.cancelled, batch })
       : Promise.resolve(batch.map((task) => ({ botId: task.bot.id, ran: false, replyText: "", outcome: "dispatch_failed" as const }))),
     snapshotWrites: async () => {
-      const cwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
+      const cwd = workFolder() ?? undefined;
       return cwd ? writesSnapshot(cwd) : undefined;
     },
     writesOutside: async (before, declared) => {
-      const cwd = store.pinGroupCwd(args.groupId, args.threadId) ?? undefined;
+      const cwd = workFolder() ?? undefined;
       if (!cwd) return undefined;
       const after = await writesSnapshot(cwd);
       return after ? writesOutside(before, after, declared) : undefined;
     },
     verify: wiring?.verify ?? (room && !room.dm && room.verify?.length ? room.verify : undefined),
+    ...(room && !room.dm && room.projectProfile ? {
+      projectProfile: room.projectProfile,
+      ...(!pinRoomFolder() ? { projectRefusal: "This room has a project profile but no working folder. Set the room's folder, then send the goal again." } : {}),
+    } : {}),
+    recordBaseline: (baseline) => goalCards.baseline(args.threadId, args.operation.goalRun, baseline),
     ...(wiring ? {
       research: wiring.research,
       missingHandoffFiles: wiring.missingHandoffFiles,
@@ -11057,12 +11104,12 @@ async function runGroupGoalOperation(args: {
       readMetric: wiring.readMetric,
       recordMetric: wiring.recordMetric,
     } : {}),
-    ...(room && !room.dm && room.verify?.length && !store.pinGroupCwd(args.groupId, args.threadId)
+    ...(room && !room.dm && room.verify?.length && !pinRoomFolder()
       ? { verifyRefusal: "This room has completion checks but no working folder to run them in. Set the room's folder, then send the goal again." }
       : {}),
     runVerify: async (command) => {
-      const roomCwd = store.pinGroupCwd(args.groupId, args.threadId);
-      const result = await (roomCwd ? runVerifyCommand(command, roomCwd) : { id: command.id, exitCode: null, output: "the room has no working folder" });
+      const roomCwd = workFolder();
+      const result = await (roomCwd ? runVerifyCommand(command, roomCwd, args.operation.cancellation.signal) : { id: command.id, exitCode: null, output: "the room has no working folder" });
       wiring?.recordVerify(result);
       return result;
     },
@@ -11072,18 +11119,32 @@ async function runGroupGoalOperation(args: {
         return bot ? modelVendor(registry.cliTarget(bot.modelSelection.instanceId)?.driverKind, bot.modelSelection.model) : undefined;
       },
     } : {}),
+    recordBrief: (brief) => goalCards.brief(args.threadId, args.operation.goalRun, brief),
+    laneEdits: async (botId, sinceMs) => {
+      const found = await Promise.all(roomLaneThreads(botId, args.threadId).map((threadId) =>
+        readFile(join(EVENTS_DIR, `${threadId}.ndjson`), "utf8").then((raw) => editedPaths(raw, sinceMs), () => [])));
+      return found.flat();
+    },
+    steerLane: async (botId, text) => {
+      const threadId = roomLaneThreads(botId, args.threadId).find((candidate) => runningTurnEngines.has(candidate));
+      const instance = threadId ? runningTurnInstance(store.bot(botId), threadId) : null;
+      if (!threadId || !instance?.adapter.capabilities.queueing || !instance.adapter.steer) return false;
+      const outcome = await instance.adapter.steer(threadId, text).catch((): SteerOutcome => "indeterminate");
+      if (outcome === "refused") return false;
+      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: text, ok: false } });
+      return outcome === "steered";
+    },
+    recordConflict: (conflict) => goalCards.conflict(args.threadId, args.operation.goalRun, conflict),
     finish: (status, detail, text) => {
       wiring?.recordEnd(status, detail);
       finishGroupGoalRun(args.groupId, args.operation, status, detail, text);
     },
     progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),
-    note: (text) => store.appendMessage(args.threadId, {
-      role: "bot",
-      kind: "activity",
-      from: { botId: args.coordinator.id, name: args.coordinator.name, color: args.coordinator.color },
-      tool: { name: text, ok: false },
-    }),
+    note,
   });
+  } catch (error) {
+    if (!args.operation.cancelled) finishGroupGoalRun(args.groupId, args.operation, error instanceof GoalBranchWorkflowError ? error.status : "blocked", error instanceof Error ? error.message : "Goal branches could not run");
+  }
 }
 
 type StartGroupTurnOptions = {
@@ -12736,6 +12797,7 @@ ROUTES.push(createGroupRoutes({
   publicGroupState,
   groupFor: personRooms.groupForAuth,
 }));
+ROUTES.push(createGoalBranchRoutes({ store, working: (id, thread) => groupThreadIsWorking(id, thread) || Boolean(store.group(id)?.memberIds.some((botId) => roomLaneThreads(botId, thread).some((lane) => runningTurnEngines.has(lane)))), threadRefusal: cloudThreadRefusal, decide: goalBranchRuns.decide }));
 ROUTES.push(createChannelRoutes({
   store, threadRead: teamMessages.seen,
   personMarkRoom: personRooms.personMarkRoom,

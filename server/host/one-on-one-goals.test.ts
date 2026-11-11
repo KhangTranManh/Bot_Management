@@ -50,6 +50,10 @@ function goalChat(startTurn: (call: number, lead: GoalLeadTurn, settle: (outcome
     cards: {
       start: () => run,
       progress: () => {},
+      brief: () => {},
+      conflict: () => {},
+      baseline: () => {},
+      branches: () => {},
       // As the real cards do, keep the first end; the run's own cleanup reports a second one.
       finish: (_threadId, _run, status, detail) => {
         if (run.finished) return;

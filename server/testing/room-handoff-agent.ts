@@ -153,7 +153,10 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
     throw new Error(`Unplanned fixture turn for ${botId}: ${own.slice(0, 300)}`);
   }
   const plan: any = entry ?? (basePlan.turns ? basePlan.turns[turnIndex] : basePlan);
-  if (!plan) throw new Error(`Unexpected extra fixture turn ${turnIndex} for ${botId}`);
+  if (!plan) {
+    appendFileSync(`${planPath}.evidence.jsonl`, JSON.stringify({ botId, turnIndex, threadId: agent.OMB_THREAD_ID, unplanned: true, resumed, system, prompt }) + "\n");
+    throw new Error(`Unexpected extra fixture turn ${turnIndex} for ${botId}`);
+  }
   for (const expected of plan.expectSystemIncludes ?? []) if (!system.includes(expected)) throw new Error(`Missing discussion context: ${expected}`);
   for (const expected of plan.expectContextIncludes ?? []) if (!turnContext.includes(expected)) throw new Error(`Missing conversation context: ${expected}`);
   const indexed = Boolean(entry || basePlan.turns);
@@ -255,7 +258,7 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
     closing = true;
     clearTimeout(timer); clearTimeout(delayTimer); clearInterval(gateTimer); lines.close(); child.stdin.destroy();
     await waitForExit(child, { signal: "SIGTERM", graceMs: 500 });
-    appendFileSync(`${planPath}.evidence.jsonl`, JSON.stringify({ botId, turnIndex, threadId: agent.OMB_THREAD_ID, pid: process.pid,
+    appendFileSync(`${planPath}.evidence.jsonl`, JSON.stringify({ botId, turnIndex, threadId: agent.OMB_THREAD_ID, pid: process.pid, cwd: process.cwd(),
       model: argv.includes("--model") ? arg("--model") : undefined,
       permissionMode: argv.includes("--permission-mode") ? arg("--permission-mode") : undefined,
       restricted: argv.includes("--restricted"), permissionPromptTool: argv.includes("--permission-prompt-tool"),

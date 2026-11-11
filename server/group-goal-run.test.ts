@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { RoomProjectProfile } from "../shared/wire.ts";
+import type { GoalBaseline } from "../shared/group-goal-run.ts";
 import type { TeamRole } from "../shared/team-roles.ts";
+import type { GoalBrief, GoalConflict } from "../shared/group-goal-run.ts";
 import type { WritesSnapshot } from "./writes-audit.ts";
 import type { MetricReading } from "./research-goal.ts";
 import {
@@ -168,8 +171,12 @@ describe("groupGoalCoordinatorInstructions harness note", () => {
   });
 });
 
-const envelope = (decision: Record<string, unknown>) =>
-  `Update.\n${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(decision)}${GROUP_GOAL_CONTROL_CLOSE}`;
+/** A plan carries a brief, as the Lead is told to; `brief: null` sends one without it. */
+const envelope = (decision: Record<string, unknown>) => {
+  const withBrief = decision.tasks !== undefined && decision.brief === undefined ? { ...decision, brief: { goal: "Get every test passing" } } : decision;
+  const sent = withBrief.brief === null ? Object.fromEntries(Object.entries(withBrief).filter(([key]) => key !== "brief")) : withBrief;
+  return `Update.\n${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(sent)}${GROUP_GOAL_CONTROL_CLOSE}`;
+};
 const settled = (replyText: string): GoalStepResult => ({ ran: true, replyText, outcome: "settled" });
 
 /** Drives the real loop with scripted steps; a step that runs counts one turn, as a claimed member turn does. */
@@ -186,12 +193,18 @@ function goalRun(options: {
   snapshotWrites?: () => Promise<WritesSnapshot | undefined>;
   writesOutside?: (before: WritesSnapshot, declared: readonly string[]) => Promise<string[] | undefined>;
   verifyRefusal?: string;
+  projectProfile?: RoomProjectProfile;
+  projectRefusal?: string;
+  cancelled?: () => boolean;
   research?: Partial<ResearchRunRules>;
   heldOutTouched?: (botId: string, sinceMs: number) => Promise<string[]>;
   missingHandoffFiles?: () => Promise<string[]>;
   readMetric?: () => Promise<MetricReading>;
   recordMetric?: (value: number) => void;
   dispatchWave?: (batch: Array<{ bot: { id: string; name: string }; role?: string; assignment: string }>) => Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GoalStepResult["outcome"]; stopReason?: string | null }>>;
+  laneEdits?: (botId: string, sinceMs: number) => Promise<string[]>;
+  steerLane?: (botId: string, text: string) => Promise<boolean>;
+  watchMs?: number;
 }) {
   const members = options.members ?? [{ id: "solo-id", name: "Solo" }];
   const run = { goal: "Get every test passing", turnCount: 0, maxTurns: GROUP_GOAL_MAX_TURNS, finished: false };
@@ -199,6 +212,9 @@ function goalRun(options: {
   const finished: Array<{ status: GoalRunEnd; detail: string }> = [];
   const progress: string[] = [];
   const notes: string[] = [];
+  const briefs: GoalBrief[] = [];
+  const conflicts: GoalConflict[] = [];
+  const baselines: GoalBaseline[] = [];
   let cancelled = false;
   const done = runGoalRun({
     run,
@@ -211,6 +227,9 @@ function goalRun(options: {
     ...(options.verify ? { verify: options.verify } : {}),
     ...(options.runVerify ? { runVerify: options.runVerify } : {}),
     ...(options.verifyRefusal ? { verifyRefusal: options.verifyRefusal } : {}),
+    projectProfile: options.projectProfile,
+    projectRefusal: options.projectRefusal,
+    recordBaseline: (baseline) => baselines.push(baseline),
     ...(options.snapshotWrites ? { snapshotWrites: options.snapshotWrites } : {}),
     ...(options.writesOutside ? { writesOutside: options.writesOutside } : {}),
     ...(options.research ? { research: { budgetWallMinutes: 600, budgetSpentMs: 0, ...options.research } } : {}),
@@ -219,7 +238,11 @@ function goalRun(options: {
     ...(options.readMetric ? { readMetric: options.readMetric } : {}),
     ...(options.recordMetric ? { recordMetric: options.recordMetric } : {}),
     ...(options.dispatchWave ? { dispatchWave: options.dispatchWave } : {}),
-    cancelled: () => cancelled,
+    ...(options.laneEdits ? { laneEdits: options.laneEdits } : {}),
+    ...(options.steerLane ? { steerLane: options.steerLane } : {}),
+    ...(options.watchMs ? { watchMs: options.watchMs } : {}),
+    recordConflict: (conflict) => conflicts.push(conflict),
+    cancelled: () => cancelled || Boolean(options.cancelled?.()),
     current: (id) => members.find((member) => member.id === id),
     step: async (bot, coordinator, instructions) => {
       calls.push({ bot: bot.id, coordinator, instructions });
@@ -235,8 +258,9 @@ function goalRun(options: {
     },
     progress: (detail) => progress.push(detail),
     note: (text) => notes.push(text),
+    recordBrief: (brief) => briefs.push(brief),
   });
-  return { done, run, calls, finished, progress, notes };
+  return { done, run, calls, finished, progress, notes, briefs, conflicts, baselines };
 }
 
 describe("one goal-run loop for a room and a one-on-one chat", () => {
@@ -615,7 +639,7 @@ describe("team roles in a goal run", () => {
       ],
       dispatchWave: async (batch) => {
         batches.push(batch.map((task) => ({ botId: task.bot.id, ...((task as { readOnly?: boolean }).readOnly ? { readOnly: true } : {}) })));
-        return batch.map((task) => ({ botId: task.bot.id, ran: true, replyText: "ok", outcome: "settled" as const }));
+        return batch.map((task) => ({ botId: task.bot.id, ran: true, replyText: "ok\nREVIEW: CLEAR", outcome: "settled" as const }));
       },
     });
     await goal.done;
@@ -639,6 +663,210 @@ describe("team roles in a goal run", () => {
     await goal.done;
     expect(goal.calls[2]!.instructions).toContain("have the Reviewer inspect the latest changes");
     expect(goal.finished).toEqual([{ status: "needs-input", detail: "Review still needed." }]);
+  });
+
+  describe("the Tester's and Reviewer's report lines", () => {
+    const reviewTeam = [...team, { id: "review-id", name: "Review" }];
+    const reviewRoles: Record<string, TeamRole> = { ...roles, "review-id": "reviewer" };
+
+    it("holds completion once on a blocking finding, names its owner, and records a deliberate set-aside", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles: reviewRoles, members: reviewTeam, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work })),
+        settled("Added src/checkout.tsx."),
+        settled("Build and tests ran.\nVERDICT: PASS"),
+        settled("FINDING: block t1 src/checkout.tsx:12 — the total ignores the discount\nFINDING: note t1 src/checkout.tsx:3 — unused import\nREVIEW: BLOCK 1"),
+        settled(envelope({ status: "completed", detail: "Done." })),
+        settled(envelope({ status: "completed", detail: "Done; discounts are out of scope for this goal." })),
+      ] });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "worker-id", "tester-id", "review-id", "lead-id", "lead-id"]);
+      expect(goal.calls[3]!.instructions).toContain("- t1 · Builder · Add the checkout page · src/checkout.tsx");
+      expect(goal.calls[4]!.instructions).toContain("reported blocking findings: src/checkout.tsx: the total ignores the discount (task t1, Builder)");
+      expect(goal.calls[4]!.instructions).not.toContain("unused import");
+      expect(goal.calls[5]!.instructions).toContain("Not done yet: the Reviewer's latest review has blocking findings");
+      expect(goal.notes).toContainEqual(expect.stringContaining("set aside: Done; discounts are out of scope"));
+      expect(goal.finished).toEqual([{ status: "completed", detail: "Done; discounts are out of scope for this goal." }]);
+    });
+
+    it("lets a fix and a clear review lift the hold", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles: reviewRoles, members: reviewTeam, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work })),
+        settled("Added."), settled("VERDICT: PASS"), settled("REVIEW: BLOCK 1"),
+        settled(envelope({ status: "continue", detail: "Fix", tasks: [{ id: "t2", assignee: "Builder", instruction: "Apply the discount", writes: ["src/checkout.tsx"] }] })),
+        settled("Fixed."), settled("VERDICT: PASS"), settled("No problems left.\nREVIEW: CLEAR"),
+        settled(envelope({ status: "completed", detail: "Checkout fixed." })),
+      ] });
+      await goal.done;
+      expect(goal.calls[4]!.instructions).toContain("ended with REVIEW: BLOCK without listing the findings");
+      expect(goal.calls.some((call) => call.instructions.includes("Not done yet"))).toBe(false);
+      expect(goal.finished).toEqual([{ status: "completed", detail: "Checkout fixed." }]);
+    });
+
+    it("asks once again for a missing VERDICT or REVIEW line instead of counting the run", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles: reviewRoles, members: reviewTeam, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work })),
+        settled("Added."), settled("Looks fine to me."), settled("Seems fine."),
+        settled(envelope({ status: "completed", detail: "Done." })),
+        settled(envelope({ status: "needs-input", detail: "Checks still owed." })),
+      ] });
+      await goal.done;
+      expect(goal.calls[4]!.instructions).toContain("Checker (Tester) did not end with a VERDICT line");
+      expect(goal.calls[4]!.instructions).toContain("Review (Reviewer) did not end with a REVIEW line");
+      expect(goal.calls[4]!.instructions).not.toContain("reported no verdict");
+      expect(goal.calls[5]!.instructions).toContain("have the Reviewer inspect the latest changes");
+    });
+
+    it("gives the Tester and Reviewer tasks the Lead wrote itself the Lead's plan, by member name", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles: reviewRoles, members: reviewTeam, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "worker-id", instruction: "Add the checkout page", writes: ["src/checkout.tsx"] },
+          { id: "r1", assignee: "review-id", instruction: "Review git diff of src/", dependsOn: ["t1"] },
+          { id: "c1", assignee: "tester-id", instruction: "Run npm test", dependsOn: ["t1"] },
+        ] })),
+        settled("Added."), settled("FINDING: note t1 src/checkout.tsx:3 — unused import\nREVIEW: CLEAR"), settled("VERDICT: PASS"),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ] });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "worker-id", "review-id", "tester-id", "lead-id"]);
+      expect(goal.calls[2]!.instructions).toContain("Review git diff of src/\nThe Lead's plan for the work you review (task · Worker · what it does · files); name the task id in each finding:\n- t1 · Builder · Add the checkout page · src/checkout.tsx");
+      expect(goal.calls[3]!.instructions).toContain("Run npm test\nThe Lead's plan for the work you test (task · Worker · what it does · files):\n- t1 · Builder · Add the checkout page · src/checkout.tsx");
+      expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+    });
+
+    it("refuses a plan that has the Tester write the tests, then runs the corrected plan", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles: reviewRoles, members: reviewTeam, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "worker-id", instruction: "Build the shop", writes: ["src/"] },
+          { id: "t3", assignee: "tester-id", role: "Test engineer", instruction: "Write the tests in tests/ and run them", writes: ["tests/"], dependsOn: ["t1"] },
+        ] })),
+        settled(envelope({ status: "needs-input", detail: "Stop here." })),
+      ] });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id"]);
+      expect(goal.calls[1]!.instructions).toContain("Plan refused: task t3 for Tester Checker declares writes (tests/)");
+    });
+
+    it("names the Worker whose declared writes cover each FAIL line", async () => {
+      const twoWorkers = [...team, { id: "maker-id", name: "Maker" }];
+      const goal = goalRun({ tasksAllowed: true, roles: { ...roles, "maker-id": "worker" }, members: twoWorkers, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [
+          { id: "t1", assignee: "Builder", instruction: "Cart", writes: ["src/cart.ts"] },
+          { id: "t2", assignee: "Maker", instruction: "Totals", writes: ["src/total.ts"] },
+        ] })),
+        settled("Cart done."), settled("Totals done."),
+        settled("FAIL: src/total.ts:3 — the sum skips tax\nVERDICT: FAIL"),
+        settled(envelope({ status: "needs-input", detail: "Stop here." })),
+      ] });
+      await goal.done;
+      expect(goal.calls.at(-1)!.instructions).toContain("Owners by declared writes: src/total.ts → Maker (task t2)");
+    });
+  });
+
+  describe("conflicts while a wave runs", () => {
+    const twoWorkers = [...team, { id: "maker-id", name: "Maker" }];
+    const twoRoles: Record<string, TeamRole> = { ...roles, "maker-id": "worker" };
+    const plan = [
+      { id: "t1", assignee: "Builder", instruction: "Cart", writes: ["src/cart.js"] },
+      { id: "t2", assignee: "Maker", instruction: "Totals", writes: ["src/total.js"] },
+    ];
+    const changed = ["src/cart.js", "src/total.js"];
+    const edits: Record<string, string[]> = { "worker-id": ["D:/w/src/cart.js"], "maker-id": ["D:/w/src/total.js", "D:/w/src/cart.js"] };
+    const watched = (overrides: { steer?: boolean; waveMs?: number; watchMs?: number }) => {
+      const steered: Array<{ botId: string; text: string }> = [];
+      const goal = goalRun({
+        tasksAllowed: true, roles: twoRoles, members: twoWorkers, watchMs: overrides.watchMs ?? 5,
+        snapshotWrites: async () => new Map(),
+        writesOutside: async (_before, declared) => changed.filter((file) => !declared.includes(file)),
+        laneEdits: async (botId) => edits[botId] ?? [],
+        steerLane: async (botId, text) => { steered.push({ botId, text }); return overrides.steer ?? true; },
+        dispatchWave: (batch) => new Promise((resolve) => setTimeout(() => resolve(batch.map(({ bot }) => ({ botId: bot.id, ran: true, replyText: "Done.", outcome: "settled" as const }))), overrides.waveMs ?? 40)),
+        steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: plan })),
+          settled(envelope({ status: "needs-input", detail: "Stop." })),
+        ],
+      });
+      return { goal, steered };
+    };
+
+    it("tells the later Worker's running turn to stop, notes it in the room at once, and asks the Lead to evaluate", async () => {
+      const { goal, steered } = watched({});
+      await goal.done;
+      expect(steered).toEqual([{ botId: "maker-id", text: "Harness note: src/cart.js belongs to task t1 (Builder) in this plan. Stop editing it, finish your own files, and tell Lead in your reply what you needed changed there." }]);
+      expect(goal.conflicts).toEqual([expect.objectContaining({ file: "src/cart.js", ownerTask: "t1", ownerBotId: "worker-id", otherTask: "t2", otherBotId: "maker-id", steered: true })]);
+      expect(goal.notes).toContain("Conflict: Maker (task t2) edited src/cart.js, which belongs to Builder (task t1); told to stop");
+      expect(goal.calls.at(-1)!.instructions).toContain("Conflicts during this wave: Maker (task t2) edited src/cart.js, which belongs to Builder (task t1) and was told to stop. Evaluate each: give the file to one Worker to merge both changes, change the plan, or ask the person.");
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id"]);
+    });
+
+    it("still reports the conflict to the Lead when the engine cannot take words mid-turn", async () => {
+      const { goal } = watched({ steer: false });
+      await goal.done;
+      expect(goal.conflicts).toEqual([expect.objectContaining({ file: "src/cart.js", steered: false })]);
+      expect(goal.notes).toContain("Conflict: Maker (task t2) edited src/cart.js, which belongs to Builder (task t1)");
+    });
+
+    it("finds a conflict after a wave that ended before the first look, without steering a finished turn", async () => {
+      const { goal, steered } = watched({ waveMs: 1, watchMs: 60_000 });
+      await goal.done;
+      expect(steered).toEqual([]);
+      expect(goal.conflicts).toEqual([expect.objectContaining({ file: "src/cart.js", steered: false })]);
+    });
+  });
+
+  describe("the run's brief", () => {
+    const reviewTeam = [...team, { id: "review-id", name: "Review" }];
+    const reviewRoles: Record<string, TeamRole> = { ...roles, "review-id": "reviewer" };
+    const brief = { goal: "Ship checkout", inScope: ["cart and checkout"], outOfScope: ["payments"], acceptance: ["Totals match SPEC.md"], constraints: ["no new dependencies"], openQuestions: [] };
+
+    it("is asked for once when the first plan has none, then the run goes on without it", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles, members: team, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work, brief: null })),
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work, brief: null })),
+        settled("Added."), settled("VERDICT: PASS"),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ] });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "worker-id", "tester-id", "lead-id"]);
+      expect(goal.calls[0]!.instructions).toContain("Your first plan carries the run's brief");
+      expect(goal.calls[1]!.instructions).toContain("Plan refused: the first plan carries the run's brief");
+      expect(goal.briefs).toEqual([]);
+      expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+    });
+
+    it("is kept on the card, given to every later Lead turn, and its acceptance checks go to the Tester and Reviewer", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles: reviewRoles, members: reviewTeam, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work, brief })),
+        settled("Added."), settled("VERDICT: PASS"), settled("REVIEW: CLEAR"),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ] });
+      await goal.done;
+      expect(goal.briefs).toEqual([brief]);
+      expect(goal.calls[4]!.instructions).toContain("The brief this run is held to:\nGoal: Ship checkout\nIn scope:\n- cart and checkout\nOut of scope:\n- payments\nAcceptance:\n- Totals match SPEC.md\nConstraints:\n- no new dependencies");
+      expect(goal.calls[4]!.instructions).not.toContain("Your first plan carries the run's brief");
+      expect(goal.calls[2]!.instructions).toContain("Acceptance checks from the run's brief:\n- Totals match SPEC.md");
+      expect(goal.calls[3]!.instructions).toContain("Acceptance checks from the run's brief:\n- Totals match SPEC.md");
+      expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+    });
+
+    it("stops at needs-input with its open questions before any work starts", async () => {
+      const goal = goalRun({ tasksAllowed: true, roles, members: team, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: work, brief: { ...brief, openQuestions: ["Which currency?", "Is shipping free?"] } })),
+      ] });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id"]);
+      expect(goal.finished).toEqual([{ status: "needs-input", detail: "Questions before work starts: 1) Which currency? 2) Is shipping free?" }]);
+    });
+
+    it("is not asked for in a room without roles or for a single next step", async () => {
+      const goal = goalRun({ tasksAllowed: true, members: team, steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [{ id: "t1", assignee: "Builder", instruction: "Add it" }], brief: null })),
+        settled("Added."),
+        settled(envelope({ status: "completed", detail: "Done." })),
+      ] });
+      await goal.done;
+      expect(goal.calls[0]!.instructions).not.toContain("run's brief");
+      expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+    });
   });
 
   describe("a Tester or Reviewer before any Worker has worked", () => {
@@ -777,6 +1005,96 @@ describe("a member that runs out of AI usage in a goal run", () => {
     await goal.done;
     expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "maple-id", "maple-id"]);
     expect(goal.finished).toEqual([{ status: "failed", detail: expect.stringContaining("Maple could not return a result") }]);
+  });
+});
+
+describe("project preparation and baseline", () => {
+  it("runs setup then baseline before the first bot, retains old failures in all turns, and still requires passing final checks", async () => {
+    const commands: string[] = [];
+    let checks = 0;
+    const goal = goalRun({
+      members: [{ id: "lead", name: "Lead" }, { id: "worker", name: "Worker" }],
+      projectProfile: { instructions: "Follow AGENTS.md", moduleMap: "src: service", protectedPaths: ["vendor"], setup: [{ id: "deps", command: "npm ci" }] },
+      verify: [{ id: "tests", command: "npm test" }],
+      runVerify: async (command) => {
+        commands.push(command.id);
+        return { id: command.id, exitCode: command.id === "tests" && ++checks < 3 ? 1 : 0, output: "old failure" };
+      },
+      steps: [
+        settled(envelope({ status: "continue", next: "Worker", instruction: "Repair", detail: "Work" })),
+        settled("Fixed."),
+        settled(envelope({ status: "completed", detail: "Done" })),
+        settled(envelope({ status: "completed", detail: "Done after repair" })),
+      ],
+    });
+    await goal.done;
+    expect(commands).toEqual(["deps", "tests", "tests", "tests"]);
+    expect(goal.baselines[0]).toMatchObject({ setup: [{ id: "deps", exitCode: 0 }], checks: [{ id: "tests", exitCode: 1 }] });
+    for (const call of goal.calls) {
+      expect(call.instructions).toContain("Follow AGENTS.md");
+      expect(call.instructions).toContain("tests: FAIL, exit 1");
+    }
+    expect(goal.calls[3]!.instructions).toContain("The room's own checks failed");
+    expect(goal.notes).toContain("Project baseline: 0/1 checks passed; already failing: tests");
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done after repair" }]);
+    expect(goal.run.turnCount).toBe(4);
+  });
+
+  it("passes the same baseline to runtime-dispatched Workers, Tester and Reviewer", async () => {
+    const assignments: string[] = [];
+    const goal = goalRun({
+      tasksAllowed: true,
+      members: [{ id: "lead", name: "Lead" }, { id: "worker", name: "Worker" }, { id: "tester", name: "Tester" }, { id: "reviewer", name: "Reviewer" }],
+      roles: { lead: "lead", worker: "worker", tester: "tester", reviewer: "reviewer" },
+      projectProfile: { moduleMap: "src: service" },
+      verify: [{ id: "build", command: "npm run build", expectExit: 2 }],
+      runVerify: async (command) => ({ id: command.id, exitCode: 2, output: "ok" }),
+      dispatchWave: async (batch) => batch.map((entry) => {
+        assignments.push(entry.assignment);
+        return { botId: entry.bot.id, ran: true, outcome: "settled", replyText: entry.bot.id === "tester" ? "VERDICT: PASS" : entry.bot.id === "reviewer" ? "REVIEW: CLEAR" : "Done" };
+      }),
+      steps: [settled(envelope({ status: "continue", tasks: [{ id: "w", assignee: "Worker", instruction: "Repair", writes: ["src/"] }] })), settled(envelope({ status: "completed", detail: "Done" }))],
+    });
+    await goal.done;
+    expect(assignments).toHaveLength(3);
+    expect(assignments.every((assignment) => assignment.includes("build: PASS, exit 2, expected 2") && assignment.includes("src: service"))).toBe(true);
+    expect(goal.finished[0]!.status).toBe("completed");
+  });
+
+  it("blocks before bot turns on setup failure and saves the failed setup without running verify", async () => {
+    const commands: string[] = [];
+    const goal = goalRun({
+      projectProfile: { setup: [{ id: "deps", command: "npm ci" }] },
+      verify: [{ id: "tests", command: "npm test" }],
+      runVerify: async (command) => { commands.push(command.id); return { id: command.id, exitCode: null, output: "timeout" }; },
+      steps: [],
+    });
+    await goal.done;
+    expect(commands).toEqual(["deps"]);
+    expect(goal.calls).toHaveLength(0);
+    expect(goal.baselines[0]).toMatchObject({ setup: [{ id: "deps", exitCode: null }], checks: [] });
+    expect(goal.finished[0]).toMatchObject({ status: "blocked", detail: expect.stringContaining("Project setup deps failed") });
+  });
+
+  it("blocks profiles without a folder and does not start commands", async () => {
+    const goal = goalRun({ projectProfile: {}, projectRefusal: "no working folder", steps: [] });
+    await goal.done;
+    expect(goal.calls).toHaveLength(0);
+    expect(goal.baselines).toHaveLength(0);
+    expect(goal.finished).toEqual([{ status: "blocked", detail: "no working folder" }]);
+  });
+
+  it("does not start a bot or another command if Stop arrives during preparation", async () => {
+    let stopped = false;
+    const goal = goalRun({
+      projectProfile: {}, verify: [{ id: "tests", command: "npm test" }, { id: "lint", command: "npm run lint" }],
+      runVerify: async (command) => { stopped = true; return { id: command.id, exitCode: 0, output: "" }; },
+      cancelled: () => stopped, steps: [],
+    });
+    await goal.done;
+    expect(goal.calls).toHaveLength(0);
+    expect(goal.finished).toHaveLength(0);
+    expect(goal.baselines).toHaveLength(0);
   });
 });
 
@@ -927,7 +1245,7 @@ describe("room verify checks and tester writes", () => {
           { id: "t2", assignee: "Reviewer", instruction: "Review it", dependsOn: ["t1"] },
         ] })),
         settled("Built."),
-        settled("Reviewed."),
+        settled("Reviewed.\nREVIEW: CLEAR"),
         settled(envelope({ status: "completed", detail: "Done." })),
       ],
     });

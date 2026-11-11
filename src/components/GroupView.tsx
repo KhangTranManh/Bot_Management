@@ -462,7 +462,7 @@ export const Transcript = memo(function Transcript({
             </div>
           ) : m.kind === "goal.run" ? (
             <div className="flex justify-start">
-              <GoalRunCard message={m} onOpen={() => openGoalPanel(m.id)} />
+              <GoalRunCard message={m} groupId={group.id} threadId={group.threadId} onOpen={() => openGoalPanel(m.id)} />
             </div>
           ) : m.kind === "routine.run" ? (
             <div className="flex justify-start">

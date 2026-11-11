@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { join } from "node:path";
+import { augmentedPath } from "./env-path.ts";
 
 /** Each changed path's git status plus, for a file still on disk, its content hash; a path a rename moved
  * away from maps to RENAMED_FROM. Ignored files are not in it. */
@@ -13,6 +14,7 @@ const MAX_HASHED_FILES = 2_000;
 function gitEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) if (!key.startsWith("GIT_")) env[key] = value;
+  env.PATH = augmentedPath();
   return env;
 }
 
@@ -86,20 +88,26 @@ function isFile(path: string): boolean {
   }
 }
 
-const declaredMatch = (changed: string, declared: readonly string[]): boolean =>
-  declared.some((entry) => {
+/** Whether a path is one of the declared writes or inside a declared folder; either side may be the shorter tail of the
+ * other. */
+export function pathDeclared(path: string, declared: readonly string[]): boolean {
+  const changed = normalize(path);
+  return declared.some((entry) => {
     const want = normalize(entry);
-    return want === changed || changed.endsWith(`/${want}`) || want.endsWith(`/${changed}`);
+    if (!want) return false;
+    return want === changed || changed.endsWith(`/${want}`) || want.endsWith(`/${changed}`) ||
+      changed.startsWith(`${want}/`) || changed.includes(`/${want}/`);
   });
+}
 
 /** Paths whose state appeared, changed or vanished between the two snapshots, minus the declared writes. */
 export function writesOutside(before: WritesSnapshot, after: WritesSnapshot, declared: readonly string[]): string[] {
   const outside: string[] = [];
   for (const [path, state] of after) {
-    if (state !== RENAMED_FROM && before.get(path) !== state && !declaredMatch(path, declared)) outside.push(path);
+    if (state !== RENAMED_FROM && before.get(path) !== state && !pathDeclared(path, declared)) outside.push(path);
   }
   for (const path of before.keys()) {
-    if (!after.has(path) && before.get(path) !== RENAMED_FROM && !declaredMatch(path, declared)) outside.push(path);
+    if (!after.has(path) && before.get(path) !== RENAMED_FROM && !pathDeclared(path, declared)) outside.push(path);
   }
   return outside;
 }

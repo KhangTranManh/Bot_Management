@@ -8,6 +8,7 @@ import { roundButtonCls } from "./bot-panel/rows";
 import { RoomStatus } from "./room-panel/RoomStatus";
 import { useRoomNow } from "@/lib/room-now";
 import { GoalInsights } from "./office/GoalInsights";
+import { GoalBranchControls } from "./GoalBranchControls";
 import { goalMessages } from "./office/goal-insights";
 
 const FEED_LIMIT = 30;
@@ -78,6 +79,7 @@ export function GoalRunPanel({ group, cardId, onClose }: { group: Group; cardId:
         {run.detail && <p dir="auto" className="mt-1 text-[13px] leading-relaxed text-ink-secondary">{line(run.detail)}</p>}
         <RoomStatus group={group} members={members} now={now} />
         <GoalInsights group={group} cardId={cardId} now={now} />
+        {run.branches && card && <GoalBranchControls message={card} groupId={group.id} threadId={group.threadId} />}
         <h3 className="mt-5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("goal.panel.activity")}</h3>
         {feed.length === 0 ? (
           <p className="mt-2 text-[13px] text-ink-tertiary">{t("goal.panel.empty")}</p>

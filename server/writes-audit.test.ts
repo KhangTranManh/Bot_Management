@@ -22,6 +22,13 @@ describe("writesOutside", () => {
     expect(writesOutside(new Map(), after, ["./page.tsx"])).toEqual(["src/app/other.ts"]);
   });
 
+  it("keeps files inside a declared folder, with or without its trailing slash, and nothing beside it", () => {
+    const after = snap({ "src/server.js": "?? a", "src/lib/db.js": "?? b", "srcs/x.js": "?? c", "tests/a.test.mjs": "?? d", "README.md": " M e" });
+    expect(writesOutside(new Map(), after, ["src/", "tests"])).toEqual(["srcs/x.js", "README.md"]);
+    expect(writesOutside(new Map(), after, ["lib"])).toEqual(["src/server.js", "srcs/x.js", "tests/a.test.mjs", "README.md"]);
+    expect(writesOutside(new Map(), after, ["./", "/"])).toHaveLength(5);
+  });
+
   it("reports rename targets but not their original paths", () => {
     const before = snap({ "old-name.ts": " M h1" });
     const after = snap({ "new-name.ts": "R  h1", "old-name.ts": "renamed-from" });

@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useStore, type Message } from "@/state/store";
 import type { GroupGoalRunCardData } from "../../shared/group-goal-run";
+import { GoalBranchControls } from "./GoalBranchControls";
 import type { LocaleKey } from "@/locales";
 
 const DETAIL_LIMIT = 280;
@@ -56,7 +57,7 @@ function StatusIcon({ status }: { status: GroupGoalRunCardData["status"] }) {
 }
 
 /** `solo` is a one-on-one chat's run, where the bot works alone; `onStop` ends a working run from the card. */
-export function GoalRunCard({ message, solo = false, onStop, onOpen }: { message: Message; solo?: boolean; onStop?: () => void; onOpen?: () => void }) {
+export function GoalRunCard({ message, solo = false, onStop, onOpen, groupId, threadId }: { message: Message; solo?: boolean; onStop?: () => void; onOpen?: () => void; groupId?: string; threadId?: string }) {
   const run = message.goalRun;
   if (!run) {
     const fallback = compact(message.text, DETAIL_LIMIT);
@@ -113,6 +114,7 @@ export function GoalRunCard({ message, solo = false, onStop, onOpen }: { message
           </button>
         )}
       </div>
+      {run.branches && groupId && threadId && <GoalBranchControls message={message} groupId={groupId} threadId={threadId} />}
     </section>
   );
 }

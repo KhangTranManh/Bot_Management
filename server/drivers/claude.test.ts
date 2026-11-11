@@ -3233,6 +3233,30 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(dump.argv).toContain("claude-other");
   });
 
+  it("releases an idle process before worktree cleanup while preserving its resume cursor", async () => {
+    const dumpPath = join(scratch, "release-idle.json");
+    process.env.FAKE_CLAUDE_DUMP = dumpPath;
+    await create("happy");
+    const first = await instance.adapter.sendTurn({ threadId: "release-idle", text: "one" });
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === first.turnId);
+    const firstPid = JSON.parse(readFileSync(dumpPath, "utf8")).pid;
+    const cursor = (recorder.events.find((event) => event.type === "session.started") as { sessionId: string }).sessionId;
+    expect(await instance.adapter.releaseIdleThread!("release-idle")).toBe(true);
+    const second = await instance.adapter.sendTurn({ threadId: "release-idle", text: "two", resumeCursor: cursor });
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === second.turnId);
+    const next = JSON.parse(readFileSync(dumpPath, "utf8"));
+    expect(next.pid).not.toBe(firstPid);
+    expect(next.argv).toContain("--resume");
+  });
+
+  it("refuses to release a running engine for worktree cleanup", async () => {
+    await create("hang");
+    await instance.adapter.sendTurn({ threadId: "release-busy", text: "work" });
+    expect(await instance.adapter.releaseIdleThread!("release-busy")).toBe(false);
+    expect(instance.adapter.hasSession("release-busy")).toBe(true);
+    await instance.adapter.interruptTurn("release-busy");
+  });
+
   it("closes an idle session after the configured window", async () => {
     // Ten seconds is the floor; poll the native log for the close instead of sleeping past it.
     process.env.OMB_CLAUDE_SESSION_IDLE_MIN_MS = "10000";

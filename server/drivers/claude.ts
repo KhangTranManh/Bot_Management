@@ -1,6 +1,9 @@
 // Claude Code over stream-json both ways: prompt on stdin, one retained CLI process per thread,
 // each turn settled by the CLI's own `result` frame.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { autoCompactWindow } from "./claude-autocompact.ts";
+export { autoCompactWindow } from "./claude-autocompact.ts";
+import { releaseIdleThread } from "./release-idle-thread.ts";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -178,19 +181,6 @@ export function readClaudeAuthSettings(
     return {};
   }
 }
-
-/** OMB_CLAUDE_AUTOCOMPACT: a token count, "auto" (the CLI's own window) or "off". The CLI rejects
- * a window outside 100k-1M as an argument error, so a configured value is clamped. */
-export function autoCompactWindow(env: NodeJS.ProcessEnv): string | null {
-  const raw = (env.OMB_CLAUDE_AUTOCOMPACT ?? "").trim().toLowerCase();
-  if (raw === "off") return null;
-  if (raw === "auto") return "auto";
-  const parsed = raw ? Number(raw) : DEFAULT_AUTOCOMPACT_TOKENS;
-  if (!Number.isFinite(parsed) || parsed <= 0) return String(DEFAULT_AUTOCOMPACT_TOKENS);
-  return String(Math.min(1_000_000, Math.max(100_000, Math.floor(parsed))));
-}
-
-const DEFAULT_AUTOCOMPACT_TOKENS = 200_000;
 
 /** The first Claude CLI to accept each flag; an unknown flag is a hard argument error. Checked
  * against the published binaries (the changelog never records --autocompact): --strict-mcp-config
@@ -2063,6 +2053,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           return behavior === "allow" ? "allowed-once" : behavior === "answer" ? "answered" : "rejected";
         },
         hasSession: (threadId) => active.has(threadId),
+        releaseIdleThread: (threadId) => releaseIdleThread(threadId, { busy: (id) => active.has(id), get: (id) => sessions.get(id), close: (id) => closeSession(id, "idle") }),
         enginePid: (threadId) => (active.has(threadId) ? sessions.get(threadId)?.child.pid : undefined),
         cacheKeepWarm: forks.adapter,
         stopAll: async () => {

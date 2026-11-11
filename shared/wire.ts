@@ -841,8 +841,8 @@ export interface GroupTask {
   busyBotId?: string | null;
 }
 
-/** One completion check the server itself runs after a goal's Tester passes: the bot never
- * chooses or sees the verdict of these, so a PASS is backed by a real exit code. */
+/** A server-run room command; completion checks use real exit codes after the Tester passes.
+ * A project profile also runs these checks before any bot turn to record existing failures. */
 export interface VerifyCommand {
   /** Stable id, named in reports. */
   id: string;
@@ -854,6 +854,18 @@ export interface VerifyCommand {
   timeoutSec?: number;
   /** The exit code that counts as passed; default 0. */
   expectExit?: number;
+}
+
+/** Optional project context for room goals; enabling it runs setup and a verify baseline before the first bot turn. */
+export interface RoomProjectProfile {
+  /** Project conventions and references to repository instructions; at most 4000 characters. */
+  instructions?: string;
+  /** A concise map of the modules the team works on; at most 4000 characters. */
+  moduleMap?: string;
+  /** Relative files or folders the bots are instructed to leave alone; advisory, not a filesystem sandbox. */
+  protectedPaths?: string[];
+  /** Server-run setup commands before each goal's baseline; a failure blocks the goal before any bot works. */
+  setup?: VerifyCommand[];
 }
 
 /** A room as a client may see it: the record plus the computed working flag. */
@@ -870,6 +882,12 @@ export interface WireGroup {
   goalFileHash?: string;
   /** Completion checks the server runs itself before a goal may finish; absent runs none. */
   verify?: VerifyCommand[];
+  /** Project context and baseline checks for goals; null in PATCH clears it. Ordinary chat is unaffected. */
+  projectProfile?: RoomProjectProfile;
+  /** Opt-in Git worktrees for role-based code goals; defaults off, including research rooms. */
+  isolatedBranches?: boolean;
+  /** Ignored local files copied into new goal worktrees; relative paths, never .git or symlinks. */
+  branchFiles?: string[];
   /** Run a person's work request as a goal; absent means on once the room has a lead. */
   autoGoal?: boolean;
   /** Computed from the usage ledger, not stored in groups.json. */

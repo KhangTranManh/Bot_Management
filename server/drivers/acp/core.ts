@@ -18,6 +18,8 @@ import { DeviceAuthController, deviceAuthInstanceSurface, type DeviceSignIn } fr
 import { deletePromptSplitReceipt, promptHalves, readPromptSplitReceipt, splitSessionPrompt, writePromptSplitReceipt } from "../prompt-split.ts";
 import type { PromptSplitReceipt } from "../prompt-split.ts";
 import { describeSpawnFailure, execCli, killCliTree, sharedBoxScope, spawnCli } from "../../procs.ts";
+import { readAcpImageBlocks } from "./image-input.ts";
+import { releaseIdleThread } from "../release-idle-thread.ts";
 import { runAcpOneShot } from "./background-text.ts";
 import { sanitizeAcpToolMessage } from "./tool-log.ts";
 import { stripLeakedSystemHarnessMessages } from "../../../shared/system-message-guard.ts";
@@ -47,7 +49,6 @@ import type {
   ProviderErrorCode,
   RequestOutcome,
   TextGenerationOptions,
-  TurnImageInput,
 } from "../../contracts.ts";
 import { newEventId, newId, TurnNotStartedError } from "../../contracts.ts";
 import { augmentedPath } from "../../env-path.ts";
@@ -285,14 +286,6 @@ function nextUnkeyedToolId(current: AcpTurn): string {
   return id;
 }
 const CLIENT_FILE_MAX_BYTES = 8 * 1024 * 1024;
-
-async function readAcpImageBlocks(images: readonly TurnImageInput[]) {
-  return Promise.all(images.map(async (image) => ({
-    type: "image" as const,
-    data: (await readFile(image.path)).toString("base64"),
-    mimeType: image.mime,
-  })));
-}
 
 function decodeAcpConfig(defaultCli: string) {
   return (raw: unknown): AcpConfig => {
@@ -1698,6 +1691,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             return finish(decision.behavior, "user", decision.message, decision.always === true);
           },
           hasSession: (threadId) => active.has(threadId),
+          releaseIdleThread: (threadId) => releaseIdleThread(threadId, { busy: (id) => active.has(id), get: (id) => sessions.get(id), close: (id) => closeSession(id, "idle"), canRelease: (session) => session.host.links.size <= 1 }),
           enginePid: (threadId) => (active.has(threadId) ? sessions.get(threadId)?.child.pid : undefined),
           stopAll: async () => {
             for (const { stop } of active.values()) stop();

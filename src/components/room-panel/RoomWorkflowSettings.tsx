@@ -21,23 +21,26 @@ export function RoomWorkflowSettings({ group }: { group: Group }) {
   const allowed = useOwnerOrAdmin();
   const [kind, setKind] = useState(group.kind ?? "chat");
   const [goalFile, setGoalFile] = useState(group.goalFile ?? "");
+  const [isolated, setIsolated] = useState(group.isolatedBranches === true);
+  const [branchFiles, setBranchFiles] = useState((group.branchFiles ?? []).join("\n"));
   const [checks, setChecks] = useState<VerifyCommand[]>(group.verify ?? []);
-  const [base, setBase] = useState(JSON.stringify([group.kind ?? "chat", group.goalFile ?? "", group.verify ?? []]));
+  const [base, setBase] = useState(JSON.stringify([group.kind ?? "chat", group.goalFile ?? "", group.verify ?? [], group.isolatedBranches === true, group.branchFiles ?? []]));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const current = JSON.stringify([group.kind ?? "chat", group.goalFile ?? "", group.verify ?? []]);
-  const dirty = JSON.stringify([kind, goalFile, checks]) !== base;
+  const current = JSON.stringify([group.kind ?? "chat", group.goalFile ?? "", group.verify ?? [], group.isolatedBranches === true, group.branchFiles ?? []]);
+  const dirty = JSON.stringify([kind, goalFile, checks, isolated, branchFiles.split(/\r?\n/).map((path) => path.trim()).filter(Boolean)]) !== base;
   const conflict = current !== base;
   const disabled = !allowed || busy || Boolean(group.working);
-  const reload = () => { setKind(group.kind ?? "chat"); setGoalFile(group.goalFile ?? ""); setChecks(group.verify ?? []); setBase(current); setError(""); setNotice(""); };
+  const reload = () => { setKind(group.kind ?? "chat"); setGoalFile(group.goalFile ?? ""); setChecks(group.verify ?? []); setIsolated(group.isolatedBranches === true); setBranchFiles((group.branchFiles ?? []).join("\n")); setBase(current); setError(""); setNotice(""); };
   const patch = async (value: Record<string, unknown>) => {
     setBusy(true); setError(""); setNotice("");
     try {
       const { group: updated } = await api<{ group: Group }>(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify(value) });
       dispatch({ type: "groupPatched", group: updated });
       setKind(updated.kind ?? "chat"); setGoalFile(updated.goalFile ?? ""); setChecks(updated.verify ?? []);
-      setBase(JSON.stringify([updated.kind ?? "chat", updated.goalFile ?? "", updated.verify ?? []]));
+      setIsolated(updated.isolatedBranches === true); setBranchFiles((updated.branchFiles ?? []).join("\n"));
+      setBase(JSON.stringify([updated.kind ?? "chat", updated.goalFile ?? "", updated.verify ?? [], updated.isolatedBranches === true, updated.branchFiles ?? []]));
       setNotice(value.researchGoalApprove ? "Server đã duyệt và khoá hash file goal." : "Đã lưu cài đặt room.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Không lưu được cài đặt."); }
     finally { setBusy(false); }
@@ -45,7 +48,7 @@ export function RoomWorkflowSettings({ group }: { group: Group }) {
   const save = () => {
     const problem = kind === "research" ? (!goalFile.trim() ? "Nhập đường dẫn file goal." : undefined) : verifyDraftProblem(checks);
     if (problem) { setError(problem); return; }
-    void patch({ kind: kind === "chat" ? null : kind, ...(kind === "research" ? { goalFile: goalFile.trim() } : { verify: checks.map((check) => ({ ...check, id: check.id.trim(), command: check.command.trim() })) }) });
+    void patch({ isolatedBranches: kind !== "research" && isolated, branchFiles: branchFiles.split(/\r?\n/).map((path) => path.trim()).filter(Boolean), kind: kind === "chat" ? null : kind, ...(kind === "research" ? { goalFile: goalFile.trim() } : { verify: checks.map((check) => ({ ...check, id: check.id.trim(), command: check.command.trim() })) }) });
   };
   const changeCheck = (index: number, patch: Partial<VerifyCommand>) => setChecks((before) => before.map((check, n) => n === index ? { ...check, ...patch } : check));
   if (group.dm) return null;
@@ -75,6 +78,11 @@ export function RoomWorkflowSettings({ group }: { group: Group }) {
           <div><label>Timeout (giây)<input type="number" min={1} max={3600} value={check.timeoutSec ?? 600} onChange={(e) => changeCheck(index, { timeoutSec: e.target.valueAsNumber })} /></label><label>Mã thoát<input type="number" step={1} value={check.expectExit ?? 0} onChange={(e) => changeCheck(index, { expectExit: e.target.valueAsNumber })} /></label></div>
         </div>)}
       </>}
+      {kind !== "research" && <div className="workflow-branches">
+        <label className="workflow-branch-toggle"><input type="checkbox" checked={isolated} onChange={(event) => setIsolated(event.target.checked)} />Branch riêng cho Worker</label>
+        <p>Mỗi Worker làm trên worktree riêng; server ghép kết quả rồi Tester và Reviewer kiểm tra. Cần thư mục Git sạch và đủ bốn vai. Bạn chọn merge, giữ hoặc bỏ branch sau goal.</p>
+        {isolated && <label>File local cần copy (mỗi dòng một đường dẫn)<textarea aria-label="File local cho worktree" rows={2} value={branchFiles} onChange={(event) => setBranchFiles(event.target.value)} placeholder=".env.local" /><span>Chỉ file bị Git ignore; không nhận symlink. Setup dùng các lệnh trong hồ sơ dự án.</span></label>}
+      </div>}
       <button type="button" disabled={!dirty} onClick={save}>{busy ? "Đang lưu…" : "Lưu cài đặt"}</button>
     </fieldset>
     {group.working && <p>Đợi goal hiện tại kết thúc trước khi sửa cài đặt.</p>}
