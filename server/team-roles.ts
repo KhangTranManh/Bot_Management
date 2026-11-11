@@ -67,6 +67,20 @@ export function withTesterTask(plan: readonly LeadTaskPlan[], roleOf: (assignee:
   }];
 }
 
+export function withReviewTask(plan: readonly LeadTaskPlan[], roleOf: (assignee: string) => TeamRole | undefined, reviewer: { id: string } | undefined): LeadTaskPlan[] {
+  const work = plan.filter((task) => roleOf(task.assignee) === "worker");
+  if (!reviewer || !work.length || plan.some((task) => roleOf(task.assignee) === "reviewer")) return [...plan];
+  const ids = new Set(plan.map((task) => task.id));
+  let id = "review";
+  for (let n = 2; ids.has(id); n++) id = `review-${n}`;
+  return [...plan, {
+    id, assignee: reviewer.id, role: "Reviewer",
+    instruction: `Review the changes from ${work.map((task) => task.id).join(", ")}: inspect the changed files for correctness, edge cases and regressions. Report concrete findings by file and severity, or explicitly report no findings. Do not repeat the Tester's build and test runs.`,
+    reads: [...new Set(work.flatMap((task) => task.writes ?? []))],
+    dependsOn: work.map((task) => task.id),
+  }];
+}
+
 /** What each role is told on top of its assignment. */
 export function teamRoleRule(role: TeamRole | undefined): string | undefined {
   if (role === "tester") return "You are this room's Tester: change no source files. Run the checks, then end your reply with exactly one line: VERDICT: PASS or VERDICT: FAIL.";

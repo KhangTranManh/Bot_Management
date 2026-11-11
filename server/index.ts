@@ -10274,7 +10274,7 @@ async function runClaimedGroupMemberTurn(
     if (drift.drift !== Boolean(bot.soulDrift)) store.patchBot(bot.id, { soulDrift: drift.drift });
   }
   const roomMemory = memorySystemPrompt(teamHost.layer(bot.id, threadId), { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false }) + teamHost.sharedNotesPrompt(bot.id, threadId);
-  const recentLines = recentWork(recentWorkSources(bot), bot, { userName: typeof userName === "string" ? userName : "the team", currentThreadId: threadId, ...recentWorkFilter(threadId) });
+  const recentLines = orchestration?.goalRunId ? [] : recentWork(recentWorkSources(bot), bot, { userName: typeof userName === "string" ? userName : "the team", currentThreadId: threadId, ...recentWorkFilter(threadId) });
   recordTurnPlace(bot.id, threadId, (roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind)) ?? (integrations.browser ? "browser" : null));
   const roomComputerPromptKind = resolveComputerPromptKind({
     kind: roomTeamComputer || roomComputerKind === "box" ? "box" : roomVmTarget ? "vm" : roomComputerKind,
@@ -10318,7 +10318,7 @@ async function runClaimedGroupMemberTurn(
     { id: "memory", label: "Memory", text: roomMemory ? `\n${roomMemory.trim()}` : "" },
     { id: "skills", label: "Skills index", text: workspace ? skillsHost.skillsIndex(bot, threadId, instance) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
-    { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
+    { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(orchestration?.goalRunId ? [orchestration.systemInstructions, orchestration.turnInstructions].filter(Boolean).join("\n") : text, bot.playbooks) },
   ], integrations.agents, { rules: cfg.everyBotRules });
 
   // Claim /learn only after setup succeeded, so a failed first responder does not consume it.

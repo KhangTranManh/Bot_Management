@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { teamPlanProblem, testerVerdict, withTesterTask } from "./team-roles.ts";
+import { teamPlanProblem, testerVerdict, withTesterTask, withReviewTask } from "./team-roles.ts";
 
 describe("testerVerdict", () => {
   it("reads the last verdict line, in any case, and nothing otherwise", () => {
@@ -24,6 +24,22 @@ describe("withTesterTask", () => {
     expect(withTesterTask(tested, roleOf, { id: "Checker" })).toHaveLength(2);
     expect(withTesterTask([{ id: "t1", assignee: "Checker", instruction: "Test" }], roleOf, { id: "Checker" })).toHaveLength(1);
     expect(withTesterTask([tested[0]!], roleOf, undefined)).toHaveLength(1);
+  });
+});
+
+describe("withReviewTask", () => {
+  const roleOf = (id: string) => ({ w: "worker", t: "tester", r: "reviewer" } as const)[id as "w" | "t" | "r"];
+  it("adds review after all work, alongside testing, without repeating test commands", () => {
+    const tasks = withReviewTask(withTesterTask([
+      { id: "review", assignee: "w", instruction: "A", writes: ["a.ts"] },
+      { id: "b", assignee: "w", instruction: "B", writes: ["b.ts"] },
+    ], roleOf, { id: "t" }), roleOf, { id: "r" });
+    expect(tasks.at(-1)).toMatchObject({ id: "review-2", assignee: "r", reads: ["a.ts", "b.ts"], dependsOn: ["review", "b"] });
+    expect(tasks.at(-1)!.instruction).toContain("Do not repeat the Tester's");
+    expect(tasks.at(-1)!.dependsOn).not.toContain("test");
+    expect(withReviewTask(tasks, roleOf, { id: "r" })).toEqual(tasks);
+    expect(withReviewTask(tasks.slice(0, 2), roleOf, undefined)).toEqual(tasks.slice(0, 2));
+    expect(withReviewTask([], roleOf, { id: "r" })).toEqual([]);
   });
 });
 

@@ -65,6 +65,7 @@ At the next start (the runtime's restart policy, `server/runtime/runtime.ts` `op
 Regression checks (all use disposable fixtures):
 
 ```sh
+pnpm exec vitest run server/group-goal-run.test.ts server/team-roles.test.ts server/group-goal-run.e2e.test.ts
 pnpm exec vitest run server/runtime/ server/runtime-coordinator.test.ts server/direct-coordination.e2e.test.ts server/room-coordination.e2e.test.ts
 pnpm exec vitest run server/delta-context.e2e.test.ts -t "restart"
 pnpm exec vitest run server/full-access-workflows.e2e.test.ts server/room-recovery.e2e.test.ts

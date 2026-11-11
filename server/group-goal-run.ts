@@ -7,7 +7,7 @@ import type { VerifyResult } from "./verify-run.ts";
 import type { WritesSnapshot } from "./writes-audit.ts";
 import { LEAD_MAX_WAVE_SIZE, leadBallotFromPlan, leadBatchesForWave, leadWaves, type LeadTaskPlan } from "./lead-schedule.ts";
 import type { TeamRole } from "../shared/team-roles.ts";
-import { TEAM_MAX_FIX_ROUNDS, teamPlanProblem, teamRoleRule, teamVendorProblem, testerVerdict, withTesterTask } from "./team-roles.ts";
+import { TEAM_MAX_FIX_ROUNDS, teamPlanProblem, teamRoleRule, teamVendorProblem, testerVerdict, withTesterTask, withReviewTask } from "./team-roles.ts";
 import { engineFailureKind } from "./drivers/engine-errors.ts";
 import { metricMeetsThreshold, researchBudgetExceeded, researchStopReason, type MetricReading } from "./research-goal.ts";
 
@@ -209,15 +209,16 @@ export function groupGoalCoordinatorInstructions(args: {
       : "Use the conversation as the progress ledger. Decide whether the goal is genuinely complete, needs the human, is blocked, or needs one named teammate next.",
     "Do not continue merely to generate discussion. Do not claim completion unless the requested deliverable or answer is present in the conversation.",
     "Write a brief human-facing update or final answer, then end with exactly one private control envelope on its own line.",
-    self
+    ...(args.roles && args.tasksAllowed && !self ? [] : [self
       ? `${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","next":"${self.id}","instruction":"Your next step","detail":"Short progress note"}${GROUP_GOAL_CONTROL_CLOSE}`
-      : `${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","next":"Exact member id from the roster","instruction":"Concrete next assignment","detail":"Short progress note"}${GROUP_GOAL_CONTROL_CLOSE}`,
+      : `${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","next":"Exact member id from the roster","instruction":"Concrete next assignment","detail":"Short progress note"}${GROUP_GOAL_CONTROL_CLOSE}`]),
     `Or use status "completed", "needs-input", or "blocked" with a non-empty "detail" and omit next/instruction.`,
     ...(args.tasksAllowed && !self ? [
       `When several pieces of work can move at the same time, first give each teammate you will use a role for this goal — one short line per teammate in your human-facing update (for example: "Scout — Researcher", "Miso — Implementer", "Quill — Reviewer") — then end with a plan envelope instead: ${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","detail":"Short progress note","tasks":[{"id":"t1","assignee":"Exact member id from the roster","role":"Implementer","instruction":"Concrete assignment for that role","writes":["shared artifact it changes"],"dependsOn":[]}]}${GROUP_GOAL_CONTROL_CLOSE}`,
       "Plan rules: 1-8 tasks with unique ids; each task goes to an active roster member whose listed profile fits it, and its role field names that role — extend each teammate's own role, never contradict it; dependsOn lists ids from this plan only; declare reads/writes/locks when tasks share artifacts or a lock, omit them when independent — the scheduler already runs overlapping tasks in turn. Never re-dispatch work the ledger already shows as done: evaluate results first.",
     ] : []),
     ...(args.roles && !self ? [
+      ...(args.tasksAllowed ? ["For implementation, use a tasks plan rather than next/instruction. Split independent files or modules among available Workers in the SAME plan, with explicit non-overlapping writes and no dependencies between independent tasks. Use dependsOn only for real data or implementation dependencies; keep coupled edits with one owner. Include Worker tasks followed by Tester and Reviewer tasks depending on the changed work, so the scheduler can run the checks together without another Lead turn. If only one Worker is needed, still use a one-Worker plan. Do not schedule a baseline Tester run unless the goal specifically needs one."] : []),
       "Team roles are fixed for this room: you are the Lead and do no task yourself; implementation goes only to members with team role worker, and every worker task lists its writes; testing goes to the tester, review to the reviewer.",
       "The goal is complete only after the tester has passed the latest changes; when the tester reports failures, give each fix to the worker who owns that file.",
     ] : []),
@@ -242,6 +243,7 @@ export function groupGoalWorkerInstructions(args: {
     `Your assignment: ${args.assignment}`,
     `This is team turn ${args.turn} of ${args.maxTurns}.`,
     "Do the assigned work now and put concrete results, evidence, or a clear blocker in your reply.",
+    "Keep the handoff concise: list changed file paths, checks and outcomes, and unresolved findings. Refer to files for long artifacts; do not paste whole files or successful tool logs into the room. Include enough error detail for the next person to fix failures.",
     `Address your result to ${args.coordinatorName}. Do not invent a new orchestration protocol or emit an openmaus-goal control envelope.`,
   ].join("\n");
 }
@@ -328,7 +330,7 @@ async function dispatchWaveBatch<Bot extends GoalRunMember>(
   entries: Array<{ plan: LeadTaskPlan; bot: Bot }>,
 ): Promise<Array<{ entry: { plan: LeadTaskPlan; bot: Bot }; result: GoalStepResult }>> {
   const dispatched = await deps.dispatchWave!(entries.map((entry) => ({
-    bot: entry.bot, role: entry.plan.role, assignment: entry.plan.instruction, ...(deps.roles?.[entry.bot.id] === "reviewer" ? { readOnly: true } : {}),
+    bot: entry.bot, role: entry.plan.role, assignment: groupGoalWorkerInstructions({ goal: deps.run.goal, coordinatorName: deps.coordinator.name, role: entry.plan.role, assignment: entry.plan.instruction, turn: deps.run.turnCount + 1, maxTurns: deps.run.maxTurns, teamRule: teamRoleRule(deps.roles?.[entry.bot.id]) }), ...(deps.roles?.[entry.bot.id] === "reviewer" ? { readOnly: true } : {}),
   })));
   const normalize = (item: { ran: boolean; replyText: string; outcome?: GoalStepOutcome }) => ({
     ...item,
@@ -375,6 +377,8 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   const roles = deps.roles && Object.keys(deps.roles).length > 0 ? deps.roles : undefined;
   const roleOf = (botId: string): TeamRole | undefined => roles?.[botId];
   const tester = roles ? goalMembers.find((member) => !member.hidden && roles[member.id] === "tester") : undefined;
+  const reviewer = roles ? goalMembers.find((member) => !member.hidden && roles[member.id] === "reviewer") : undefined;
+  let unreviewed = false;
   const team = { untested: false, fixRounds: 0, planRefusals: 0, earlyCompletions: 0 };
   let pilotAccepted = false;
   /** Workers who have taken work in this run, for the vendor rule on later judges. */
@@ -394,9 +398,10 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
     return undefined;
   };
   /** Folds one settled member result into the Tester gate; a reason means the run stops there. */
-  const settle = (bot: Bot, replyText: string, outsideWrites?: readonly string[]): string | undefined => {
+  const settle = (bot: Bot, replyText: string, outsideWrites?: readonly string[], reviewCurrent = true): string | undefined => {
     const role = roleOf(bot.id);
-    if (role === "worker") team.untested = true;
+    if (role === "worker") { team.untested = true; unreviewed = true; }
+    if (role === "reviewer" && reviewCurrent) unreviewed = false;
     if (role === "evaluator" && outsideWrites?.length) {
       team.untested = true;
       coordinatorNote = `${bot.name} (Evaluator) changed files outside its report region (${outsideWrites.slice(0, 5).join(", ")}): its results do not count. ` +
@@ -477,6 +482,15 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       deps.finish("blocked", `${coordinator.name} did not provide a valid next-step decision.`);
       return;
     }
+    if (decision.status === "completed" && reviewer && unreviewed) {
+      team.earlyCompletions += 1;
+      if (team.earlyCompletions >= 2) {
+        deps.finish("blocked", `${coordinator.name} called the goal done before the Reviewer reviewed the latest changes.`);
+        return;
+      }
+      coordinatorNote = "Not done yet: have the Reviewer inspect the latest changes and address its findings before completing.";
+      continue;
+    }
     if (decision.status === "completed" && tester && team.untested) {
       team.earlyCompletions += 1;
       if (team.earlyCompletions >= 2) {
@@ -539,7 +553,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
 
     if ("tasks" in decision) {
       const tasks = roles
-        ? withTesterTask(decision.tasks, (assignee) => roleOf(resolveGroupGoalMember(assignee, goalMembers)?.id ?? ""), tester)
+        ? withReviewTask(withTesterTask(decision.tasks, (assignee) => roleOf(resolveGroupGoalMember(assignee, goalMembers)?.id ?? ""), tester), (assignee) => roleOf(resolveGroupGoalMember(assignee, goalMembers)?.id ?? ""), reviewer)
         : decision.tasks;
       const planned: Array<{ plan: LeadTaskPlan; bot: Bot }> = [];
       for (const task of tasks) {
@@ -677,7 +691,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
                 outsideWrites?.length && result.outcome === "settled" &&
                   ((roleOf(entry.bot.id) === "tester" && testerVerdict(result.replyText) === "pass") || roleOf(entry.bot.id) === "evaluator")
                   ? outsideWrites
-                  : undefined);
+                  : undefined, !entries.some(({ bot }) => roleOf(bot.id) === "worker"));
               if (stop) {
                 deps.finish("blocked", stop);
                 return;
@@ -705,6 +719,15 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       return;
     }
     const workerBot = deps.current(worker.id);
+    if (tasksAllowed && roles?.[worker.id] === "worker") {
+      team.planRefusals += 1;
+      if (team.planRefusals >= 3) {
+        deps.finish("blocked", `${coordinator.name}'s plan kept omitting Worker task declarations.`);
+        return;
+      }
+      coordinatorNote = "Plan required: use tasks with explicit writes for implementation. Split independent files among available Workers in one plan; the server adds testing and review after the work.";
+      continue;
+    }
     if (workerBot && outOfRun.has(workerBot.id)) {
       coordinatorNote = `${workerBot.name}'s AI ran out of usage in this run; give the assignment to someone else.`;
       continue;

@@ -23,6 +23,7 @@ let routineGoalFinishGate = "";
 let queueFinishGate = "";
 let stopScopedLeadFinishGate = "";
 let waveHeldFinishGate = "";
+let optimizedFinishGate = "";
 let sideHeldFinishGate = "";
 let chatSlowFinishGate = "";
 let base = "";
@@ -61,6 +62,7 @@ beforeAll(async () => {
   queueFinishGate = join(home, "queue-finish");
   stopScopedLeadFinishGate = join(home, "stop-scoped-lead-finish");
   waveHeldFinishGate = join(home, "wave-held-finish");
+  optimizedFinishGate = join(home, "optimized-finish");
   sideHeldFinishGate = join(home, "side-held-finish");
   chatSlowFinishGate = join(home, "chat-slow-finish");
   writeFileSync(stopScopedLeadFinishGate, "allow initial goal delegation");
@@ -72,6 +74,33 @@ beforeAll(async () => {
   writeFileSync(join(staticDir, "assets", "smoke.css"), "body{}");
   writeFileSync(join(data, "config.json"), JSON.stringify({
     instances: {
+      optimizedLead: {
+        driver: "claudeAgent", displayName: "Optimized lead",
+        environment: {
+          FAKE_CLAUDE_MODE: "happy",
+          FAKE_CLAUDE_REPLIES: JSON.stringify([
+            'Plan.\n<openmaus-goal>{"status":"continue","detail":"Independent modules","tasks":[{"id":"a","assignee":"Held worker","instruction":"Build a.ts","writes":["a.ts"]},{"id":"b","assignee":"Free worker","instruction":"Build b.ts","writes":["b.ts"]}]}</openmaus-goal>',
+            'Reviewed.\n<openmaus-goal>{"status":"completed","detail":"Built, tested and reviewed."}</openmaus-goal>',
+          ]),
+          FAKE_CLAUDE_REPLY_STATE: join(home, "optimized-lead-replies.txt"),
+        }, config: { cli: FAKE_CLAUDE },
+      },
+      optimizedTester: {
+        driver: "claudeAgent", displayName: "Optimized tester",
+        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["Checks pass.\nVERDICT: PASS"]) }, config: { cli: FAKE_CLAUDE },
+      },
+      optimizedHeld: {
+        driver: "claudeAgent", displayName: "Optimized held worker",
+        environment: { FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_SLOW_FINISH_GATE: optimizedFinishGate, FAKE_CLAUDE_REPLIES: JSON.stringify(["Built a.ts."]) }, config: { cli: FAKE_CLAUDE },
+      },
+      optimizedFree: {
+        driver: "claudeAgent", displayName: "Optimized free worker",
+        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["Built b.ts."]) }, config: { cli: FAKE_CLAUDE },
+      },
+      optimizedReviewer: {
+        driver: "claudeAgent", displayName: "Optimized reviewer",
+        environment: { FAKE_CLAUDE_MODE: "happy", FAKE_CLAUDE_REPLIES: JSON.stringify(["Reviewed a.ts and b.ts. No findings."]) }, config: { cli: FAKE_CLAUDE },
+      },
       complete: {
         driver: "claudeAgent",
         displayName: "Completing fixture",
@@ -402,6 +431,34 @@ afterAll(async () => {
 });
 
 describe("goal-driven channel runs", () => {
+  it("runs independent Workers together and automatically tests and reviews their work", async () => {
+    const make = async (name: string, instanceId: string) => (await api("POST", "/api/bots", { name, modelSelection: { instanceId, model: "claude-sonnet-5" }, requireAvailableModel: true })).body.bot;
+    const lead = await make("Optimized lead", "optimizedLead");
+    const held = await make("Held worker", "optimizedHeld");
+    const free = await make("Free worker", "optimizedFree");
+    const tester = await make("Optimized tester", "optimizedTester");
+    const reviewer = await make("Optimized reviewer", "optimizedReviewer");
+    const room = (await api("POST", "/api/groups", {
+      name: "Optimized team", memberIds: [lead.id, held.id, free.id, tester.id, reviewer.id],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } },
+    })).body.group;
+    expect((await api("PATCH", `/api/groups/${room.id}`, { roles: { [lead.id]: "lead", [held.id]: "worker", [free.id]: "worker", [tester.id]: "tester", [reviewer.id]: "reviewer" } })).status).toBe(200);
+    expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "Build independent a.ts and b.ts, test and review", mode: "goal", sendId: "goal_optimized_1234567890" })).status).toBe(202);
+    const state = async () => (await api("GET", "/api/bots?messages=80")).body.groups.find((candidate: { id: string }) => candidate.id === room.id);
+    const results = (current: any) => current.messages.filter((message: any) => message.roomRequest?.phase === "result").map((message: any) => message.from?.name);
+    try {
+      await expect.poll(async () => results(await state()), { timeout: hostTimeout(20_000) }).toContain("Free worker");
+      expect(results(await state())).not.toContain("Held worker");
+      expect(results(await state())).not.toContain("Optimized tester");
+      expect(results(await state())).not.toContain("Optimized reviewer");
+    } finally {
+      writeFileSync(optimizedFinishGate, "release optimized worker");
+    }
+    await expect.poll(async () => (await state()).messages.find((message: any) => message.kind === "goal.run")?.goalRun, { timeout: hostTimeout(20_000) })
+      .toMatchObject({ status: "completed", turnCount: 4, detail: "Built, tested and reviewed." });
+    expect(results(await state()).sort()).toEqual(["Free worker", "Held worker", "Optimized reviewer", "Optimized tester"].sort());
+  });
+
   it("returns to the lead until the goal is completed and appends a clean receipt", async () => {
     const lead = (await api("POST", "/api/bots", {
       name: "Lead",

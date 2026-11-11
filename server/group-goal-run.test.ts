@@ -496,6 +496,31 @@ describe("team roles in a goal run", () => {
   const roles: Record<string, TeamRole> = { "lead-id": "lead", "worker-id": "worker", "tester-id": "tester" };
   const work = [{ id: "t1", assignee: "Builder", instruction: "Add the checkout page", writes: ["src/checkout.tsx"] }];
 
+  it("requires declared Worker tasks when waves are enabled, then runs the corrected plan", async () => {
+    const goal = goalRun({ tasksAllowed: true, roles, members: team, steps: [
+      settled(envelope({ status: "continue", next: "Builder", instruction: "Build everything", detail: "Work" })),
+      settled(envelope({ status: "continue", detail: "Plan", tasks: work })),
+      settled("Built."), settled("VERDICT: PASS"),
+      settled(envelope({ status: "completed", detail: "Done." })),
+    ] });
+    await goal.done;
+    expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "worker-id", "tester-id", "lead-id"]);
+    expect(goal.calls[1]!.instructions).toContain("Plan required");
+    expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+  });
+
+  it("requires a Reviewer turn before completing after a Worker change", async () => {
+    const goal = goalRun({ tasksAllowed: false, roles: { ...roles, "review-id": "reviewer" }, members: [...team, { id: "review-id", name: "Review" }], steps: [
+      settled(envelope({ status: "continue", next: "Builder", instruction: "Build", detail: "Build" })),
+      settled("Built."),
+      settled(envelope({ status: "completed", detail: "Done." })),
+      settled(envelope({ status: "completed", detail: "Done." })),
+    ] });
+    await goal.done;
+    expect(goal.calls[3]!.instructions).toContain("have the Reviewer inspect the latest changes");
+    expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("before the Reviewer reviewed") }]);
+  });
+
   it("adds a Tester task after the work, tells each role its rule, and completes once the Tester passes", async () => {
     const goal = goalRun({
       tasksAllowed: true, roles, members: team,
@@ -579,13 +604,13 @@ describe("team roles in a goal run", () => {
     expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
   });
 
-  it("counts a parallel batch as one team turn and marks a Reviewer's task read-only", async () => {
+  it("counts each wave batch as one team turn and marks a Reviewer's task read-only", async () => {
     const reviewRoles: Record<string, TeamRole> = { "lead-id": "lead", "worker-id": "worker", "tester-id": "reviewer" };
     const batches: Array<Array<{ botId: string; readOnly?: boolean }>> = [];
     const goal = goalRun({
       tasksAllowed: true, roles: reviewRoles, members: team,
       steps: [
-        settled(envelope({ status: "continue", detail: "Plan", tasks: [...work, { id: "r1", assignee: "Checker", instruction: "Review the design doc" }] })),
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [...work, { id: "r1", assignee: "Checker", instruction: "Review the design doc", dependsOn: ["t1"] }] })),
         settled(envelope({ status: "completed", detail: "Done." })),
       ],
       dispatchWave: async (batch) => {
@@ -594,8 +619,26 @@ describe("team roles in a goal run", () => {
       },
     });
     await goal.done;
-    expect(batches).toEqual([[{ botId: "worker-id" }, { botId: "tester-id", readOnly: true }]]);
-    expect(goal.run.turnCount).toBe(3);
+    expect(batches).toEqual([[{ botId: "worker-id" }], [{ botId: "tester-id", readOnly: true }]]);
+    expect(goal.run.turnCount).toBe(4);
+  });
+
+  it("does not count a review concurrent with implementation as reviewing the latest changes", async () => {
+    const goal = goalRun({
+      tasksAllowed: true, roles: { "worker-id": "worker", "tester-id": "reviewer" }, members: team,
+      steps: [
+        settled(envelope({ status: "continue", detail: "Plan", tasks: [...work, { id: "r", assignee: "Checker", instruction: "Review the design" }] })),
+        settled(envelope({ status: "completed", detail: "Done." })),
+        settled(envelope({ status: "needs-input", detail: "Review still needed." })),
+      ],
+      dispatchWave: async (batch) => batch.map(({ bot, assignment }) => {
+        expect(assignment).toContain(bot.id === "worker-id" ? "You are a Worker" : "You are this room's Reviewer");
+        return { botId: bot.id, ran: true, replyText: "Done.", outcome: "settled" as const };
+      }),
+    });
+    await goal.done;
+    expect(goal.calls[2]!.instructions).toContain("have the Reviewer inspect the latest changes");
+    expect(goal.finished).toEqual([{ status: "needs-input", detail: "Review still needed." }]);
   });
 });
 
@@ -971,12 +1014,12 @@ describe("research room rules", () => {
 
   it("a Reviewer picked in a later turn is still held to the vendor rule against earlier Workers", async () => {
     const goal = goalRun({
-      tasksAllowed: true,
+      tasksAllowed: false,
       members: [{ id: "lead-id", name: "Lead" }, { id: "worker-id", name: "Worker" }, { id: "rev-id", name: "Rev" }],
       roles: { "worker-id": "worker", "rev-id": "reviewer" },
       vendorOf: () => "anthropic",
       steps: [
-        researchPlan([{ id: "t1", assignee: "Worker", instruction: "Build", writes: ["a.ts"] }]),
+        settled(envelope({ status: "continue", next: "Worker", instruction: "Build a.ts", detail: "Build" })),
         settled("Built."),
         settled(envelope({ status: "continue", next: "Rev", instruction: "Review a.ts", detail: "Reviewing" })),
         settled(envelope({ status: "needs-input", detail: "Pick another reviewer." })),
