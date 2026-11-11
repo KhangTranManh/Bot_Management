@@ -358,6 +358,9 @@ async function stepOnceRetried<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>
   return deps.step(bot, coordinator, instructions, lane);
 }
 
+const CHECKER_FIRST_NOTE =
+  "No Worker has worked yet, so the Tester or Reviewer would check unchanged code. Plan the Worker tasks first; if you want a baseline check on purpose, send the same step again";
+
 /** The goal run loop, the same for a room and a one-on-one chat (a room of one). */
 export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bot>): Promise<void> {
   const { run, coordinator } = deps;
@@ -383,6 +386,14 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   let pilotAccepted = false;
   /** Workers who have taken work in this run, for the vendor rule on later judges. */
   const workersSeen = new Map<string, string>();
+  let checkerFirstRefused = false;
+  const checkerBeforeWorker = (assigneeIds: readonly string[]): boolean => {
+    if (!roles || checkerFirstRefused || workersSeen.size > 0 || !Object.values(roles).includes("worker")) return false;
+    const assigned = assigneeIds.map(roleOf);
+    if (assigned.includes("worker") || !assigned.some((role) => role === "tester" || role === "reviewer")) return false;
+    checkerFirstRefused = true;
+    return true;
+  };
   const metricValues = [...(deps.research?.priorMetricValues ?? [])];
   /** Members whose AI ran out of usage during this run: no more tasks go to them. */
   const outOfRun = new Set<string>();
@@ -586,6 +597,15 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
         coordinatorNote = `Plan refused: ${problem}. Send a corrected plan.`;
         continue;
       }
+      if (checkerBeforeWorker(planned.map(({ bot }) => bot.id))) {
+        team.planRefusals += 1;
+        if (team.planRefusals >= 3) {
+          deps.finish("blocked", `${coordinator.name}'s plan kept breaking the team roles — ${CHECKER_FIRST_NOTE}.`);
+          return;
+        }
+        coordinatorNote = CHECKER_FIRST_NOTE;
+        continue;
+      }
       team.planRefusals = 0;
       pilotAccepted = true;
       for (const { bot } of planned) if (roleOf(bot.id) === "worker") workersSeen.set(bot.id, bot.name);
@@ -735,6 +755,15 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
     if (!workerBot || workerBot.hidden) {
       deps.finish("blocked", `${worker.name} is not available.`);
       return;
+    }
+    if (checkerBeforeWorker([workerBot.id])) {
+      team.planRefusals += 1;
+      if (team.planRefusals >= 3) {
+        deps.finish("blocked", `${coordinator.name}'s plan kept breaking the team roles — ${CHECKER_FIRST_NOTE}.`);
+        return;
+      }
+      coordinatorNote = CHECKER_FIRST_NOTE;
+      continue;
     }
     const assignmentKey = groupGoalAssignmentKey(worker.id, decision.instruction);
     const repeated = (assignmentCounts.get(assignmentKey) ?? 0) + 1;

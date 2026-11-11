@@ -640,6 +640,98 @@ describe("team roles in a goal run", () => {
     expect(goal.calls[2]!.instructions).toContain("have the Reviewer inspect the latest changes");
     expect(goal.finished).toEqual([{ status: "needs-input", detail: "Review still needed." }]);
   });
+
+  describe("a Tester or Reviewer before any Worker has worked", () => {
+    it("counts the checker-first refusal toward the shared plan-refusal limit", async () => {
+      const goal = goalRun({
+        tasksAllowed: true, roles, members: team,
+        steps: [
+          settled(envelope({ status: "continue", next: "Checker", instruction: "Run the tests", detail: "Baseline" })),
+          settled(envelope({ status: "continue", next: "Builder", instruction: "Build it", detail: "Work" })),
+          settled(envelope({ status: "continue", next: "Builder", instruction: "Build it", detail: "Work" })),
+        ],
+      });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "lead-id"]);
+      expect(goal.calls[1]!.instructions).toContain("Plan the Worker tasks first");
+      expect(goal.calls[2]!.instructions).toContain("Plan required");
+      expect(goal.finished).toEqual([{ status: "blocked", detail: expect.stringContaining("plan kept omitting Worker task declarations") }]);
+    });
+
+    it("refuses a first next step to the Tester once, then accepts the same step", async () => {
+      const goal = goalRun({
+        tasksAllowed: false, roles, members: team,
+        steps: [
+          settled(envelope({ status: "continue", next: "Checker", instruction: "Run the tests", detail: "Baseline" })),
+          settled(envelope({ status: "continue", next: "Checker", instruction: "Run the tests", detail: "Baseline" })),
+          settled("Ran.\nVERDICT: PASS"),
+          settled(envelope({ status: "needs-input", detail: "Baseline taken." })),
+        ],
+      });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "tester-id", "lead-id"]);
+      expect(goal.calls[1]!.instructions).toContain("Plan the Worker tasks first");
+    });
+
+    it("refuses a plan with only Reviewer tasks once, then accepts it", async () => {
+      const reviewTeam = [...team, { id: "reviewer-id", name: "Reviewer" }];
+      const reviewRoles: Record<string, TeamRole> = { ...roles, "reviewer-id": "reviewer" };
+      const reviewOnly = [{ id: "r1", assignee: "Reviewer", instruction: "Review the current code" }];
+      const goal = goalRun({
+        tasksAllowed: true, roles: reviewRoles, members: reviewTeam,
+        steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: reviewOnly })),
+          settled(envelope({ status: "continue", detail: "Plan", tasks: reviewOnly })),
+          settled("Reviewed."),
+          settled(envelope({ status: "needs-input", detail: "Baseline taken." })),
+        ],
+      });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "reviewer-id", "lead-id"]);
+      expect(goal.calls[1]!.instructions).toContain("Plan the Worker tasks first");
+    });
+
+    it("leaves a plan with Worker and Tester tasks alone", async () => {
+      const goal = goalRun({
+        tasksAllowed: true, roles, members: team,
+        steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: [...work, { id: "c1", assignee: "Checker", instruction: "Run the tests", dependsOn: ["t1"] }] })),
+          settled("Built."),
+          settled("Ran.\nVERDICT: PASS"),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ],
+      });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "worker-id", "tester-id", "lead-id"]);
+      expect(goal.calls[1]!.instructions).not.toContain("Plan the Worker tasks first");
+    });
+
+    it("leaves a room with no Worker alone", async () => {
+      const goal = goalRun({
+        tasksAllowed: false, roles: { "lead-id": "lead", "tester-id": "tester" }, members: team,
+        steps: [
+          settled(envelope({ status: "continue", next: "Checker", instruction: "Run the tests", detail: "Baseline" })),
+          settled("Ran.\nVERDICT: PASS"),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ],
+      });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "tester-id", "lead-id"]);
+    });
+
+    it("leaves a room without roles alone", async () => {
+      const goal = goalRun({
+        tasksAllowed: false, members: team,
+        steps: [
+          settled(envelope({ status: "continue", next: "Checker", instruction: "Run the tests", detail: "Baseline" })),
+          settled("Ran."),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ],
+      });
+      await goal.done;
+      expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "tester-id", "lead-id"]);
+    });
+  });
 });
 
 describe("a member that runs out of AI usage in a goal run", () => {
