@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { patchOrganizationUpdater } from "../scripts/patch-organization-updater.mjs";
 import environments from "./environments.cjs";
 import localOrigin from "./local-origin.cjs";
 import { createOrganizationEntry, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
@@ -30,7 +29,6 @@ test("the organisation protocol is a fixed action without URL routing or credent
     assert.equal(isOrganizationDeepLink(value), false);
   }
 });
-
 test("local entry opens Settings without enrollment or persistence", async () => {
   const h = fixture({ activeId: "local" });
   assert.equal(await h.entry.request(), true);
@@ -85,23 +83,6 @@ test("desktop relaunch accepts every platform once, guards its sender, and prese
     assert.deepEqual(calls, [], "the IPC response precedes normal shutdown");
     timers[0]();
     assert.deepEqual(calls, [["--fixture", "openmausbot://organization?ignored"], "quit"]);
-  }
-});
-
-test("the shipped updater adapter explicitly omits only the fixed action and its reproducible patch fails closed", () => {
-  const before = "      relaunch() {\n        this.app.relaunch();\n      }";
-  const patched = patchOrganizationUpdater(before);
-  // Git may check the vendored bundle out with CRLF on Windows.
-  const bundle = readFileSync(new URL("./vendor/electron-updater.cjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-  assert.ok(bundle.includes(patched));
-  const calls = [];
-  const argv = ["/fixture/OpenMausBot", "--fixture", "openmausbot://organization", "openmausbot://organization?ignored"];
-  runInNewContext(`({ app, ${patched} }).relaunch();`, {
-    process: { argv }, app: { relaunch: options => calls.push(options.args) },
-  });
-  assert.deepEqual(calls, [["--fixture", "openmausbot://organization?ignored"]]);
-  for (const changed of ["", `${before}\n${before}`, patched]) {
-    assert.throws(() => patchOrganizationUpdater(changed), /to patch, found/);
   }
 });
 

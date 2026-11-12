@@ -23,11 +23,10 @@
   },
   "include": [
     "server",
-    "companion",
-    "enterprise",
-    "connector"
+    "companion"
   ],
   "exclude": [
-    "server/drivers/pi-mcp-extension.ts"
+    "server/drivers/pi-mcp-extension.ts",
+    "server/testing/composio-broker-fixture"
   ]
 }

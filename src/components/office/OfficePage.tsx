@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Menu, Plus, ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
-import { useStore, openRoomThread, type Group, type Bot } from "@/state/store";
+import { api, useStore, openRoomThread, type Group, type Bot, type Message } from "@/state/store";
 import { ranFor } from "@/lib/room-now";
 import { NewRoomPanel } from "../SidebarNewRoomPanel";
 import { OfficeScene } from "./OfficeScene";
@@ -20,6 +20,17 @@ export function OfficePage({ onMenu }: { onMenu(): void }) {
   const [selected, setSelected] = useState<{ groupId: string; botId: string }>();
   const [create, setCreate] = useState(false);
   const needs = officeNeeds(groups);
+  const [accepting, setAccepting] = useState<string>();
+  const [acceptError, setAcceptError] = useState("");
+  const acceptGoal = async (groupId: string, threadId: string, messageId: string, key: string) => {
+    setAccepting(key); setAcceptError("");
+    try {
+      const reply = await api<{ goalRun: NonNullable<Message["goalRun"]> }>(`/api/groups/${groupId}/tasks/${threadId}/goals/${messageId}/accept`, { method: "POST" });
+      const message = state.groups.find((group) => group.id === groupId)?.messages.find((candidate) => candidate.id === messageId);
+      if (message) dispatch({ type: "messagePatched", threadId, message: { ...message, goalRun: reply.goalRun } });
+    } catch (cause) { setAcceptError(cause instanceof Error ? cause.message : "Không xác nhận được goal."); }
+    finally { setAccepting(undefined); }
+  };
   const visible = groups.filter((group) => filter === "all" || (filter === "need" ? needs.some((item) => item.group.id === group.id) : group.kind === filter));
   const pages = Math.max(1, Math.ceil(visible.length / 4));
   const currentPage = Math.min(page, pages - 1);
@@ -58,11 +69,6 @@ export function OfficePage({ onMenu }: { onMenu(): void }) {
             {shown.length ? <OfficeScene groups={shown} bots={state.bots} jobs={jobs} selected={selected ? `${selected.groupId}:${selected.botId}` : undefined} select={choose} openRoom={openRoom} /> : <p className="office-empty">Không có room phù hợp.</p>}
             <div className="office-legend">
               {Object.entries(OFFICE_STATE).map(([id, label]) => <span key={id} data-state={id} className="office-state">{label}</span>)}
-              <span className="office-link-key" data-link="chief">Chief → Lead</span>
-              <span className="office-link-key" data-link="plan">Lead → Workers song song</span>
-              <span className="office-link-key" data-link="check">Workers → Tester/Reviewer</span>
-              <span className="office-link-key" data-link="beam">đang giao task</span>
-              <span className="office-link-key" data-link="queue">queue thật</span>
             </div>
           </section>
           <div className="office-pagination"><span>{visible.length ? currentPage + 1 : 0}/{visible.length ? pages : 0} trang</span><button className="office-icon" aria-label="Trang trước" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={16} /></button><button className="office-icon" aria-label="Trang sau" disabled={currentPage >= pages - 1} onClick={() => setPage(currentPage + 1)}><ChevronRight size={16} /></button></div>
@@ -75,7 +81,7 @@ export function OfficePage({ onMenu }: { onMenu(): void }) {
               return <button key={id} className="office-member" onClick={() => choose(group, bot)}><span>{bot.name}<small>{ROLE_NAME[group.roles?.[id] ?? ""] ?? bot.modelSelection.model}</small></span><span className="office-state" data-state={officeState(bot, job)}>{OFFICE_STATE[officeState(bot, job)]}</span></button>;
             })}
           </Hud>)}</div>
-          <p className="office-footnote">Nét đứt là cách phối hợp theo vai: Chief nối tới Lead; Lead chia task cho các Worker chạy song song; Tester, Reviewer và Evaluator nhận kết quả sau Worker và có thể chạy cùng lúc. Tia hồng–xanh kèm tên task chỉ xuất hiện khi goal đang chạy và thành viên đó đang xử lý task theo trạng thái thật. Nét xanh dương là queue thật. Trạng thái cập nhật mỗi 5 giây.</p>
+          <p className="office-footnote">Sàn mỗi room chia theo vai: Lead, Workers, Kiểm tra, từ trái sang phải. Khi một bot nhận việc, tờ phiếu bay từ người giao sang bàn của nó rồi nằm lại đó tới khi xong; màn hình bàn sáng khi bot đang chạy. Chồng phiếu mờ là việc đang xếp hàng. Nét mặt của bot đổi theo việc nó đang làm; lúc rảnh không có gì chuyển động.</p>
         </div>
         <div className="office-rail">
           <Hud title="Luồng công việc" count={goals.length}>
@@ -88,7 +94,7 @@ export function OfficePage({ onMenu }: { onMenu(): void }) {
           </Hud>
           <Hud title="Cần bạn" count={needs.length}>
             {!needs.length && <p>Không có yêu cầu đang chờ trong lịch sử đã tải.</p>}
-            {needs.map((item) => <div key={`${item.group.id}:${item.id}`} className="office-need"><b>{item.title}</b><small>{item.group.name} · {item.detail}</small><button className="office-action office-wait-action" onClick={() => openRoom(item.group, item.group.threadId, item.group.messages.some((m) => m.id === item.id) ? item.id : undefined)}>Mở</button></div>)}
+            {needs.map((item) => <div key={`${item.group.id}:${item.id}`} className="office-need"><b>{item.title}</b><small>{item.group.name} · {item.detail}</small><button className="office-action office-wait-action" onClick={() => openRoom(item.group, item.group.threadId, item.group.messages.some((m) => m.id === item.id) ? item.id : undefined)}>Mở</button>{item.accept && <button className="office-action office-wait-action" disabled={accepting === item.id} onClick={() => void acceptGoal(item.group.id, item.accept!.threadId, item.accept!.messageId, item.id)}>Xác nhận xong</button>}</div>)}{acceptError && <p role="alert">{acceptError}</p>}
           </Hud>
           <Hud title="Bot đang chọn">
             {chosenRoom && chosenBot ? <div className="office-detail"><h3>{chosenBot.name}</h3><p>{ROLE_NAME[chosenRoom.roles?.[chosenBot.id] ?? ""] ?? "Chưa có vai"} · {chosenRoom.name}</p><code>{chosenBot.modelSelection.model}</code>

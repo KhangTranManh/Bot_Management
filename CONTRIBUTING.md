@@ -23,7 +23,7 @@ and logged in. macOS is the primary release platform and Ubuntu 24.04 x64 is the
 the harness server itself is portable Node and the test suite runs on macOS, Linux, and Windows.
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot
+git clone https://github.com/KhangTranManh/Bot_Management && cd Bot_Management
 pnpm install
 
 pnpm dev:server    # harness server → 127.0.0.1:8799
@@ -65,7 +65,7 @@ and produces one release artifact containing:
 
 Before publishing, confirm that `package.json` has the release version and dispatch the workflow against the same
 commit used for the other platforms. Attach all five Ubuntu files to the matching release in the separate
-[OpenMausBot releases](https://github.com/milind-soni/OpenMausBot/releases). Then verify the checksum
+[OpenMausBot releases](https://github.com/KhangTranManh/Bot_Management/releases). Then verify the checksum
 file and install the `.deb` plus launch the AppImage in a clean Ubuntu 24.04 x86_64 GNOME environment. Never combine
 packages built from different commits under one version.
 
@@ -253,12 +253,7 @@ out of its commits and screenshots.
 ## Contribution licensing
 
 - No DCO sign-off is required. Submit only code you wrote or have the right
-  to contribute under the applicable project license.
-- Changes under `enterprise/` (source-available, see [LICENSING.md](LICENSING.md))
-  need the [CLA](CLA.md), signed once by commenting on the pull request
-  when the bot asks. Changes outside `enterprise/` do not require a CLA.
-- `enterprise/`, the cloud seam and the licensing files have code owners; a
-  maintainer review is required there.
+  to contribute under the [Apache License 2.0](LICENSE).
 
 ## CI, in one glance
 

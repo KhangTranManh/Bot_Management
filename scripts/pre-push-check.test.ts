@@ -28,7 +28,7 @@ describe("what a push's changed files call for", () => {
 
   it("runs a guard only when a source it reads changed", () => {
     expect(guards(["server/index.ts"])).toEqual(["scripts/testing/file-size-ratchet.test.ts", "src/locales/vocabulary.test.ts"]);
-    expect(guards(["scripts/release-ci.mjs"])).toEqual(["scripts/testing/file-size-ratchet.test.ts"]);
+    expect(guards(["scripts/ci-scope.mjs"])).toEqual(["scripts/testing/file-size-ratchet.test.ts"]);
     expect(guards(["src/locales/en.json"])).toEqual(["src/locales/vocabulary.test.ts"]);
     expect(guards(["server/a.test.ts", "server/testing/fake.ts"])).toEqual([]);
   });

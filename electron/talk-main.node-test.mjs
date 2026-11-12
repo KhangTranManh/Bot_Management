@@ -93,10 +93,9 @@ test("main hands the talk wiring its speech sinks, this computer's own server an
   assert.doesNotMatch(main, /ipcMain\.handle\("(?:speech|talk-shortcut|call):/);
 });
 
-test("main tells the talk wiring when home changes and which skin the app painted, and counts a talk ask as busy for a quiet update", () => {
+test("main tells the talk wiring when home changes and which skin the app painted", () => {
   assert.match(main, /const homeWindow = createHomeWindow\(\{[^]*?rehomed: \(\) => talk\.homeChanged\(\),[^]*?\}\);\ninstallHomeWindowIpc/);
   assert.match(main, /ipcMain\.handle\("desktop:skin", \(event, skin\) => \{\s*if \(!isKnownSkin\(skin\)\) return false;\s*if \(chromeRail\.owns\(event\)\) return true;\s*try \{\s*talk\.skin\(skin\);/);
-  assert.match(main, /busy: \(\) => \(\(oneHome\.oneHome\.busy\(\) \|\| ownHome\?\.busy\(\)\) && "move"\) \|\| \(computerSharing\?\.busy\(\) && "lending"\) \|\| \(talk\.busy\(\) && "talk"\) \|\|/);
 });
 
 test("the talk bridge keys stay off other servers' pages; a call can be reported from My Cloud's page", () => {

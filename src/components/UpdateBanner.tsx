@@ -8,7 +8,6 @@ import { NoticeToast } from "./NoticeCard";
 const primaryAction =
   "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-1.5 text-[13px] font-medium text-white transition-colors disabled:cursor-default disabled:bg-control disabled:text-ink-secondary";
 
-// electron-updater surfaces failures as a whole HTTP dump (status line, every header, stack trace).
 function friendlyError(message?: string): string {
   if (!message) return t("update.banner.somethingWrong");
   if (/cannot find .*\.yml|404/i.test(message))

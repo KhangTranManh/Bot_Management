@@ -1,9 +1,6 @@
-// A self-hosted server cannot replace itself, so this only says whether a newer release exists and how this install is updated.
 import { existsSync } from "node:fs";
 import { join, sep } from "node:path";
 
-export const LATEST_RELEASE_URL = "https://api.github.com/repos/milind-soni/OpenMausBot/releases/latest";
-const CACHE_MS = 60 * 60_000;
 
 /** "managed" is a hosted or Cloud server that is updated for its owner. */
 export type InstallKind = "desktop" | "managed" | "docker" | "podman" | "npm" | "git" | "unknown";
@@ -69,49 +66,16 @@ export interface UpdateCheck {
   restart?: boolean;
 }
 
-/** One cached GitHub lookup an hour, shared by every caller. */
 export function createUpdateChecker(options: {
   current: string;
   install: InstallKind;
-  fetch?: typeof fetch;
-  now?: () => number;
 }) {
-  const fetchRelease = options.fetch ?? fetch;
-  const now = options.now ?? Date.now;
-  let cached: { at: number; result: UpdateCheck } | undefined;
-  let inflight: Promise<UpdateCheck> | undefined;
-  const base = (): UpdateCheck => ({
-    current: options.current,
-    install: options.install,
-    available: false,
-    ...UPDATE_COMMANDS[options.install],
-  });
-
   return async function check(): Promise<UpdateCheck> {
-    if (options.install === "desktop" || options.install === "managed") return base();
-    if (cached && now() - cached.at < CACHE_MS) return cached.result;
-    inflight ??= (async () => {
-      try {
-        const response = await fetchRelease(LATEST_RELEASE_URL, {
-          headers: { accept: "application/vnd.github+json", "user-agent": "openmausbot-update-check" },
-          signal: AbortSignal.timeout(8_000),
-        });
-        if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
-        const release = await response.json() as { tag_name?: unknown; html_url?: unknown };
-        if (typeof release.tag_name !== "string") throw new Error("GitHub sent no release tag");
-        const latest = release.tag_name.replace(/^v/, "");
-        const result: UpdateCheck = {
-          ...base(),
-          latest,
-          available: isNewerVersion(latest, options.current),
-          ...(typeof release.html_url === "string" ? { releaseUrl: release.html_url } : {}),
-        };
-        cached = { at: now(), result };
-        return result;
-      } finally {
-        inflight = undefined;
-      }
-    })();
-    return inflight;
+    return {
+      current: options.current,
+      install: options.install,
+      available: false,
+      ...(options.install === "desktop" || options.install === "managed" ? {} : UPDATE_COMMANDS[options.install]),
+    };
   };
 }

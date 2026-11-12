@@ -1,4 +1,4 @@
-// A loopback stand-in for the managed connected-apps service (cloudflare/composio-broker): the connected list, and an MCP
+// A loopback stand-in for a connected-apps service: the connected list, and an MCP
 // endpoint that answers the Google tools the way Composio's multi-execute tool does, as the default connected account.
 import { createServer } from "node:http";
 

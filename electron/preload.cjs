@@ -77,9 +77,6 @@ if (typeof window !== "undefined") {
 const REMOTE_SAFE = new Set(["platform", "app", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "rail", "cloudAdd", "cloudPlan", "cloudSendPage", "accountSheet", "desktopNotices", "desktopNotifications", "desktopAnalytics", "desktopLanguage", "updatesConsent", "windowControls", "onOpenAppSettings", "windowFrame"]);
 /** My Cloud's own page once it is the person's home (main checks the sender again): it is this app's page then. */
 const HOME_PAGE = ["home", "onChatLink", "onPackageInstall", "exportDiagnostics", "openLogsFolder", "openAtLogin", "callActive"];
-function updaterOffered() {
-  try { return ipcRenderer.sendSync("update:offered") === true; } catch { return false; }
-}
 function homePage() {
   try { return ipcRenderer.sendSync("home:page") === true; } catch { return false; }
 }
@@ -101,7 +98,7 @@ ipcRenderer.on("desktop-language:changed", (_event, language) => {
   for (const listener of languageListeners) listener(language);
 });
 const onHomePage = !isLocalPage && homePage();
-const remoteKeys = isLocalPage ? REMOTE_SAFE : new Set([...REMOTE_SAFE, ...(updaterOffered() ? ["updater"] : []), ...(onHomePage ? HOME_PAGE : [])]);
+const remoteKeys = isLocalPage ? REMOTE_SAFE : new Set([...REMOTE_SAFE, ...(onHomePage ? HOME_PAGE : [])]);
 
 // Keep in parity with shared/workspace-backup-client.ts (a sandboxed preload cannot import it).
 const COMPANY_BACKUP_CLIENT_KEYS = [
@@ -418,22 +415,6 @@ const bridge = {
       ? ipcRenderer.invoke("open-at-login:set", on === true) : Promise.reject(new Error("Turn on the switch to open OpenMausBot at login.")),
   },
   setCredential: (name, value) => ipcRenderer.invoke("credential:set", name, value),
-
-  updater: {
-    check: () => ipcRenderer.invoke("update:check"),
-    install: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("update:install") : Promise.reject(new Error("Choose Restart to update.")),
-    seen: () => ipcRenderer.invoke("update:seen"),
-    onState: (cb) => {
-      ipcRenderer
-        .invoke("update:get-state")
-        .then((s) => cb(s))
-        .catch(() => {});
-      const handler = (_event, s) => cb(s);
-      ipcRenderer.on("update:state", handler);
-      return () => ipcRenderer.removeListener("update:state", handler);
-    },
-  },
 
   /** A remote page may read the list but never change where this window goes. */
   environments: {

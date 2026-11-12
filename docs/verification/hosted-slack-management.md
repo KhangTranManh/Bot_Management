@@ -26,7 +26,7 @@ its own visitors.
 Run these disposable fixtures:
 
 ```sh
-pnpm exec vitest run server/hosted-slack.test.ts server/routes/hosted-slack.test.ts server/request-auth.test.ts server/hosted-access.test.ts
+pnpm exec vitest run server/hosted-slack.test.ts server/routes/hosted-slack.test.ts server/request-auth.test.ts
 pnpm exec vitest run src/components/bot-settings/SlackSection.test.ts
 OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/slack-management-ui.e2e.test.ts
 pnpm typecheck
@@ -36,13 +36,8 @@ pnpm lint
 The route test serves the module through the route table on a real HTTP
 server: the hosted answer, `{available:false}` for a local install, a hook
 that is not live and local membership, 404 for missing and hidden agents, and
-a pass for every other method and path. The hosted-access test starts an owned
-server with a temporary home and fake Admin backchannel. It proves the real
-route returns the correct agent link to an admin and to a member, rejects
-missing and hidden agents, revokes a demoted admin's session, refuses a
-member's write and an unauthenticated read, and withholds the link in local
-membership mode. The helper tests cover incomplete or invalid configuration
-and URL parameter boundaries.
+a pass for every other method and path. The helper tests cover incomplete or
+invalid configuration and URL parameter boundaries.
 
 The UI test launches `control-omb ui` with the real renderer and a disposable
 fake-engine workspace. It checks that the real API answers `{available:false}`

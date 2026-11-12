@@ -44,16 +44,19 @@ original preview's 340px rail, 14px panel padding and 26px title; the HTML previ
 
 ## Motion
 
-- Four motions only: the hand-off dash flowing toward the receiver (`no-flow`, 1.1s), the job bubble riding its beam (`animateMotion`, 3.4s and up), the halo pulse of a running bot and the Chief's inner ring (`no-pulse`, 2.4s), the Chief's dashed ring turning (`no-spin`, 18s). Plus the cursor after `SYS://online`.
+- Five motions only: the hand-off ticket flying once from the one who hands the work on to the one who takes it (`office-hop`, 1.1s, only when a bot takes a job after the first poll), the halo pulse of a running bot and the Chief's inner ring (`no-pulse`, 2.4s), the Chief's dashed ring turning (`no-spin`, 18s), and the mascots' own faces. Plus the cursor after `SYS://online`.
+- There are no lines or arrows between bots. Roles are floor zones (Lead, Workers, Kiểm tra, left to right); who gave work to whom is a ticket in the air, then a paper on the receiver's desk. At rest nothing flows.
+- A running bot's desk screen glows; a queued bot has a stack of faded papers. A small round badge beside each busy bot's head says what its face means (thinking, reading, writing, running a command, receiving, handing in, queued, failed step, drowsy, asleep, waiting for you, out of usage, goal done); an idle bot has none. Faces and badges are held at least 1.5s so a 5s poll never flickers.
 - Nothing else moves: no hover animations on panels, no page-load sequence, no glitch.
-- Under `prefers-reduced-motion: reduce` every one of them stops; the bubble sits at its beam's midpoint.
+- Under `prefers-reduced-motion: reduce` every one of them stops: no ticket flies (the paper is simply on the desk) and the mascots are not animated.
+
 
 ## The isometric scene
 
 - One projection for everything, unit `iso-unit` (26px): screen x = (x − y) × 26 × 0.866, screen y = (x + y) × 13 − z × 26.
 - The Chief's hub is at world (0, 0). Rooms sit around it as rectangles in world units: one up (both negative), one left (x − y negative), one right (x − y positive), one down (both positive). Keep a gap of at least 3 units between platforms.
 - A platform is `iso-platform` thick; desks are `iso-desk`; seats fill a 2-column grid, 3 columns past four members, and are drawn back to front by x + y.
-- Order of layers: floor grid (every 2 units, `major` lines every 10), platforms with their desks and bots, links and beams, the hub on top.
+- Order of layers: floor grid (every 2 units, `major` lines every 10), platforms with their zones, desks and bots, tickets in the air, the hub on top.
 - The page supplies three SVG defs used by the classes: filters `#no-soft` (blur 4) and `#no-bloom`, and the `#no-beam` gradient from `magenta` to `cyan`. Copy them from `office-preview.html`.
 - The SVG keeps its `viewBox` and sits in an `overflow-x: auto` box with `min-width: 760px`; the page itself never scrolls sideways.
 - Filtering dims rooms and beams to `opacity-dim`; it never removes them.

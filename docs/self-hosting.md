@@ -113,7 +113,7 @@ would answer the whole internet over plain http. More options are in
 ### Docker with your own domain
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot/deploy
+git clone https://github.com/KhangTranManh/Bot_Management && cd Bot_Management/deploy
 cp .env.example .env                          # set DOMAIN (and ENGINES)
 docker compose pull omb && docker compose up -d
 docker compose exec omb openmausbot pair      # Link https://<DOMAIN>/pair#code=…
@@ -335,13 +335,13 @@ Requirements: Docker with Compose, a DNS name pointing at the machine, and
 ports 80/443 open.
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot/deploy
+git clone https://github.com/KhangTranManh/Bot_Management && cd Bot_Management/deploy
 cp .env.example .env            # set DOMAIN
 docker compose pull omb && docker compose up -d
 ```
 
 That uses the image CI publishes on every `main` push
-(`ghcr.io/milind-soni/openmausbot`, tagged `latest`, `sha-…` and `v…`).
+(`ghcr.io/khangtranmanh/bot_management`, tagged `latest`, `sha-…` and `v…`).
 To build from your checkout instead: `docker compose up -d --build`.
 
 Then sign the engine CLIs in **inside the container** (their logins live on
@@ -392,7 +392,7 @@ Requirements: Node 24+, pnpm, and at least one agent CLI installed and
 signed in on the server.
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot
+git clone https://github.com/KhangTranManh/Bot_Management && cd Bot_Management
 pnpm install
 
 # choose where data lives and start the server

@@ -619,17 +619,16 @@ describe("finding the browser engine", () => {
     expect(resolveAgentBrowserReleaseAsset("darwin", "arm64")!.target).toBe("darwin-arm64");
   });
 
-  it("pins the native-verified Windows revision in both download and desktop manifests", () => {
+  it("uses the official Windows release in downloads and desktop manifests", () => {
     const asset = resolveAgentBrowserReleaseAsset("win32", "x64")!;
     expect(asset).toEqual({
-      target: "win32-x64", version: "0.36.0-omb.1",
-      asset: "agent-browser-win32-x64-0.36.0-omb.1.exe",
-      url: "https://github.com/milind-soni/OpenMausBot/releases/download/browser-engine-v0.36.0-omb.1/agent-browser-win32-x64-0.36.0-omb.1.exe",
-      bytes: 13806080, sha256: "33bee834f6a6072ec8688b0914726e0262874d758f69f27e8baf7eaac6b5ed15",
+      target: "win32-x64",
+      asset: "agent-browser-win32-x64.exe",
+      bytes: 13931520, sha256: "3345b9579a6e266a97c1dfc16b2c4af581de68830c77148da0baee945d804d79",
     });
-    expect(agentBrowserReleaseVersion(asset)).toBe("0.36.0-omb.1");
+    expect(agentBrowserReleaseVersion(asset)).toBe("0.37.0");
     expect(browserBundleSpec("win32-x64").engine).toEqual({
-      version: asset.version, asset: asset.asset, url: asset.url,
+      version: AGENT_BROWSER_VERSION, asset: asset.asset, url: agentBrowserReleaseUrl(asset),
       bytes: asset.bytes, sha256: asset.sha256, executable: "agent-browser.exe",
     });
     for (const [platform, arch] of [["darwin", "arm64"], ["darwin", "x64"], ["linux", "arm64"], ["linux", "x64"]] as const) {
@@ -637,25 +636,23 @@ describe("finding the browser engine", () => {
     }
   });
 
-  it("does not reuse a pre-fix Windows managed install for a revised release", () => {
+  it("does not reuse an older Windows managed install", () => {
     const dataDir = join(tmpdir(), "omb-versioned-browser-fixture");
     const old = join(dataDir, "tools", "agent-browser", "0.36.0", "agent-browser.exe");
-    const revised = pinnedBinaryPath(dataDir, "win32", "x64");
-    expect(revised).toBe(join(dataDir, "tools", "agent-browser", "0.36.0-omb.1", "agent-browser.exe"));
+    const current = pinnedBinaryPath(dataDir, "win32", "x64");
+    expect(current).toBe(join(dataDir, "tools", "agent-browser", "0.37.0", "agent-browser.exe"));
     const files = new Set([old]);
     const options = { dataDir, platform: "win32" as const, arch: "x64", env: { PATH: "" }, exists: (file: string) => files.has(file) };
     expect(resolveAgentBrowserBinary(options)).toBeNull();
-    files.add(revised);
-    expect(browserEngineStatus(options)).toMatchObject({ kind: "ready", binaryPath: revised, version: "0.36.0-omb.1" });
+    files.add(current);
+    expect(browserEngineStatus(options)).toMatchObject({ kind: "ready", binaryPath: current, version: "0.37.0" });
     expect(resolveAgentBrowserBinary({ ...options, env: { PATH: "", OMB_AGENT_BROWSER_PATH: old } })).toBe(old);
   });
 
-  it("retains default upstream versions and permits a pinned platform-specific asset URL", () => {
+  it("resolves every asset from the official pinned release", () => {
     const official = resolveAgentBrowserReleaseAsset("linux", "x64")!;
     expect(agentBrowserReleaseVersion(official)).toBe(AGENT_BROWSER_VERSION);
-    const revised = { ...official, version: "0.36.0-omb.1", url: "https://example.invalid/releases/download/fixed/fixture.exe" };
-    expect(agentBrowserReleaseVersion(revised)).toBe("0.36.0-omb.1");
-    expect(agentBrowserReleaseUrl(revised)).toBe(revised.url);
+    expect(agentBrowserReleaseUrl(official)).toBe(`https://github.com/vercel-labs/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/${official.asset}`);
   });
 
   it.each(SUPPORTED_BROWSER_TARGETS)("uses the complete %s desktop bundle before old downloaded engines", (target) => {
@@ -831,8 +828,7 @@ describe("finding the browser engine", () => {
       const asset = resolveAgentBrowserReleaseAsset(platform, arch);
       expect(asset, `${platform}-${arch}`).not.toBeNull();
       expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/u);
-      if (asset?.url) expect(agentBrowserReleaseUrl(asset)).toBe(asset.url);
-      else expect(agentBrowserReleaseUrl(asset!)).toContain(`/v${AGENT_BROWSER_VERSION}/`);
+      expect(agentBrowserReleaseUrl(asset!)).toContain(`/v${AGENT_BROWSER_VERSION}/`);
     }
     expect(resolveAgentBrowserReleaseAsset("linux", "x64", true)?.target).toBe("linux-musl-x64");
     expect(resolveAgentBrowserReleaseAsset("freebsd", "x64")).toBeNull();

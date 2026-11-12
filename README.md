@@ -4,7 +4,7 @@
 
 **A team of AI bots in one chat app, run as a real team: a Lead that plans, Workers that build in parallel, a Tester that signs off.**
 
-Built on [OpenMausBot](https://github.com/milind-soni/OpenMausBot) · local-first · bring your own agents
+Built on [OpenMausBot](https://github.com/KhangTranManh/Bot_Management) · local-first · bring your own agents
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
@@ -236,7 +236,7 @@ it fails the same way on the upstream base.
 ## License and credits
 
 [Apache License 2.0](LICENSE). Based on OpenMausBot © 2026 Milind Soni and OpenMausBot contributors; changes in
-this fork © 2026 their authors. `enterprise/` is source-available under its [own license](enterprise/LICENSE).
+this fork © 2026 their authors.
 See [LICENSING.md](LICENSING.md) and [NOTICE](NOTICE).
 
 Neon bundles Be Vietnam Pro, Chakra Petch and JetBrains Mono under [SIL OFL 1.1](public/fonts/neon-OFL.txt).

@@ -19,7 +19,6 @@ function render(state: UpdaterState, window: object = { ogb: { updater: {} } }, 
 }
 
 const LOCAL = "http://127.0.0.1:8799";
-const CLOUD = "https://home-7f3k2.fly.dev";
 const OTHER = "https://bots.example.test";
 function serverPageBridge(origin: string, answered: boolean) {
   let bridge: unknown;
@@ -40,13 +39,6 @@ function serverPageBridge(origin: string, answered: boolean) {
 }
 
 describe("UpdateBanner", () => {
-  it("shows the ready update and its restart on My Cloud's page", () => {
-    const html = render({ status: "downloaded", version: "0.2.0" }, { location: { origin: CLOUD }, ogb: serverPageBridge(CLOUD, true) });
-    expect(html).toContain("MausBot 0.2.0 is ready");
-    expect(html).toContain("Restart to update");
-    expect(html).toContain("Later");
-  });
-
   it("is absent from another server's page, which never gets the updater", () => {
     const ogb = serverPageBridge(OTHER, false) as { updater?: unknown };
     expect(ogb.updater).toBeUndefined();

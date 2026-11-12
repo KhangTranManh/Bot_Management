@@ -53,30 +53,6 @@ function requireExecutable(file) {
   }
 }
 
-// electron-updater picks its installer from resources/package-type ("deb" →
-// DebUpdater, absent → AppImageUpdater), and the app's updater reads the same
-// marker; a marker in both artifacts (or neither) silently inverts the routing.
-function requirePackageType(resources, label, expected) {
-  const marker = path.join(resources, "package-type");
-  const found = statSync(marker, { throwIfNoEntry: false })?.isFile()
-    ? readFileSync(marker, "utf8").trim()
-    : null;
-  if (found !== expected) {
-    fail(
-      `${label} package-type marker is ${JSON.stringify(found)}, expected ${JSON.stringify(expected)}`,
-    );
-  }
-}
-
-function requireUpdaterTarget(resources, label) {
-  const updateFile = path.join(resources, "app-update.yml");
-  requireFile(updateFile);
-  const update = readFileSync(updateFile, "utf8");
-  if (!/^owner: milind-soni$/m.test(update) || !/^repo: OpenMausBot$/m.test(update)) {
-    fail(`${label} app-update.yml does not point at milind-soni/OpenMausBot`);
-  }
-}
-
 function sha256(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
@@ -437,9 +413,6 @@ try {
   const debAppRoot = path.join(extracted, "opt", "OpenMausBot");
   requireDirectoryMode(debAppRoot, 0o755);
   const debResources = path.join(debAppRoot, "resources");
-  // Routes the in-app updater to the package-manager hand-off.
-  requirePackageType(debResources, "DEB", "deb");
-  requireUpdaterTarget(debResources, "DEB");
   const debHashes = verifyCuaResources(debResources, "DEB");
   const debCloudflaredHash = verifyCloudflaredResources(debResources, "DEB");
   if (debCloudflaredHash !== unpackedCloudflaredHash) {
@@ -503,9 +476,6 @@ try {
     );
   }
   const appImageResources = path.join(squashRoot, "resources");
-  // No marker: the AppImage keeps the in-place restart-to-update path.
-  requirePackageType(appImageResources, "AppImage", null);
-  requireUpdaterTarget(appImageResources, "AppImage");
   // Depending on the pinned appimagetool runtime, SquashFS directories are
   // emitted as root:root 0755 or 0775. Require one mode consistently across
   // the reviewed resource tree. The app never executes through that path:

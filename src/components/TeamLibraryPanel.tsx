@@ -18,7 +18,6 @@ import { ShareTeamDialog } from "./ShareTeamDialog";
 import { OrgLibraryTab } from "./TeamLibraryPanelOrg";
 import { MAX_TEAM_BACKUP_BYTES } from "../../shared/team-backup";
 import { takeImportName } from "../../shared/import-name";
-const COMMUNITY_TEAMS_REPOSITORY = "https://github.com/milind-soni/openmausbot-teams";
 
 export { TeamImportDetails };
 
@@ -486,9 +485,9 @@ export function TeamLibraryPanel({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {!pending && (
+            {!pending && catalog?.repositoryUrl && (
               <button
-                onClick={() => void openExternal(catalog?.repositoryUrl ?? COMMUNITY_TEAMS_REPOSITORY)}
+                onClick={() => void openExternal(catalog.repositoryUrl)}
                 className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
                 title={t("templates.openRepository")}
               >

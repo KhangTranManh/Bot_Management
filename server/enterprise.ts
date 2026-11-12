@@ -1,5 +1,4 @@
-// Hook point for the source-available enterprise layer (enterprise/, under its own licence), loaded only when present:
-// core never imports it statically. Its one obligation is `register()`, turning OMB_LICENSE_KEY into entitlements.
+// Optional extension hook loaded only when configured or present beside the server.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

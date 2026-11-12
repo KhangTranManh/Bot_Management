@@ -1527,8 +1527,8 @@ For a paid plan the Admin also sets `OMB_CLOUD_CONNECTED_APPS_GRANT` (secret):
 a grant it signs for the machine id, which the server presents to the service
 once it holds its token. The service then gives this installation a paid
 Cloud's app-event limit (2,000 a day instead of a desktop's 500). Without it a
-Cloud gets the desktop limit. The grant's format is in
-[the broker's README](../cloudflare/composio-broker/README.md#paid-clouds).
+Cloud gets the desktop limit. The grant format belongs to the configured
+external broker.
 
 ### Trial Claude credit
 
@@ -2176,8 +2176,8 @@ sleeps: true}`; `cloud.state` stays `ready`. Without `cloud.power`, nothing belo
   wake never causes a needless new pairing.
 - **Copy:** the menu and the server switcher say "Sleeps when idle" instead of "Always on" for such a Cloud; the buy sheet
   shows the line for a plan whose allowances say `sleeps`.
-- **App events:** the connected-apps broker asks the Admin to wake a Cloud when it queues an event for one that isn't
-  polling (`cloudflare/composio-broker`, off until `CLOUD_ADMIN_URL` and `CLOUD_GRANT_SECRET` are set).
+- **App events:** a configured connected-apps broker can ask the Admin to wake a Cloud when it queues an event for one
+  that is not polling.
 
 ### Usage meter: how close the plan is to its limits, and Upgrade
 
@@ -2404,8 +2404,8 @@ ends the move as before.
 ## Published image
 
 Every push to `main` and every release tag publishes the home machine image as
-`ghcr.io/milind-soni/openmausbot-cloud-home`, tagged `latest` (main only), `sha-<commit>` and the release tag.
+`ghcr.io/khangtranmanh/bot_management-cloud-home`, tagged `latest` (main only), `sha-<commit>` and the release tag.
 It is the `Dockerfile`'s `cloud-home` target for the same commit, with Grok and the current Claude Code and
 Codex installed. The Docker workflow's summary prints the digest. Set it in the Admin as
-`OMB_CLOUD_HOME_IMAGE=ghcr.io/milind-soni/openmausbot-cloud-home@sha256:…`; changing it rolls the new image
+`OMB_CLOUD_HOME_IMAGE=ghcr.io/khangtranmanh/bot_management-cloud-home@sha256:…`; changing it rolls the new image
 out to existing machines one at a time, reverting automatically on a failed health check.

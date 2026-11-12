@@ -19,8 +19,7 @@ The guide covers every string a person reads in pt-BR:
   be translated again by the client.
 
 It does not cover bot or system prompts, tool descriptions written for models,
-logs, developer or CLI errors, emails sent by the control plane, the docs site
-(`apps/docs`), `companion/` or `enterprise/`. Those stay in English.
+logs, developer or CLI errors, or `companion/`. Those stay in English.
 
 ## Voice and tone
 

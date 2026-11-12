@@ -21,8 +21,7 @@ The same TypeScript **harness server** (`server/`) runs in four places:
 - **Self-hosted server** (`openmausbot serve`, from npm or the root
   `Dockerfile`). People pair browsers, desktops and phones with it.
 - **Hosted or shared workspaces.** Several people sign in to one server
-  (email sign-in, members, `openmausbot fleet`). Members and roles live in
-  `enterprise/`, and the hook point is `server/enterprise.ts`.
+  (email sign-in, members, `openmausbot fleet`).
 - **MausBot Cloud home.** Each customer gets one Fly app with one machine
   (the `cloud-home` stage of the root `Dockerfile`, plus `deploy/fly/`). Caddy
   terminates TLS, and the server stays on loopback. See `docs/cloud-pro.md`.
@@ -33,13 +32,12 @@ Bots have tools:
 - a per-bot Chrome (agent-browser) whose traffic goes through an egress gate;
 - computer use: the local desktop, a local VM, and paid cloud computers;
 - MCP servers, both custom ones and the harness's own;
-- Composio connected apps, through `cloudflare/composio-broker/`;
+- Composio connected apps through an explicitly configured broker;
 - routines (scheduled turns), rooms (several bots in one conversation),
   webhooks and app-event triggers;
 - file-based memory, saved website logins and 1Password;
 - a phone companion (`companion/`), reached over the LAN, Tailscale, or a
-  managed Cloudflare tunnel (`cloudflare/control-plane/`,
-  `electron/managed-companion-tunnel.mjs`).
+  configured tunnel (`electron/managed-companion-tunnel.mjs`).
 
 ## Trust boundaries
 
@@ -138,10 +136,8 @@ Bots have tools:
     - Each Cloud customer has its own Fly app, volume and private network.
       Pairing on a home opens only for a request signed with that machine's
       secret (`/api/cloud/pairing`).
-    - The Cloudflare Workers `cloudflare/control-plane/` and
-      `cloudflare/composio-broker/` serve every installation. One
-      installation's credential must never read or act on another's
-      endpoints, tunnels, Composio sessions or trigger events.
+    - A configured shared service must isolate each installation's endpoints,
+      tunnels, Composio sessions, and trigger events.
 11. **Webhook ingress.**
     - Webhooks arrive on a separate listener (`OMB_WEBHOOK_PORT`;
       `server/webhook-ingress.ts`, `server/webhooks.ts`).
@@ -277,16 +273,13 @@ These are deliberate product decisions. Do not report them.
   - `electron/` (preload, the companion origin gateway, the managed tunnel);
   - `shared/redact.ts`, `server/config.ts`, `server/login-*.ts`;
   - `server/webhook*.ts`;
-  - `server/cloud-*.ts` and `deploy/fly/Caddyfile`;
-  - `cloudflare/`;
-  - `enterprise/server/`.
+  - `server/cloud-*.ts` and `deploy/fly/Caddyfile`.
 - **Less:**
   - `src/` (the web UI): in scope for script injection and for CSRF against
     the server;
   - `scripts/`: build and release tooling.
 - **Out of scope:**
-  - `apps/docs/` (the documentation site), `evals/`, and test fixtures under
-    `server/testing/`;
+  - `evals/` and test fixtures under `server/testing/`;
   - `third_party/` (vendored upstream code), unless OpenMausBot's own use of
     it creates the issue;
   - the mobile apps and the Cloud Admin, which live in other repositories;

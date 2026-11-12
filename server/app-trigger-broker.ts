@@ -1,4 +1,4 @@
-// The connected-apps service's app-event routes (cloudflare/composio-broker), called with this installation's token.
+// The configured connected-apps service's app-event routes.
 import { z } from "zod";
 
 export interface BrokerAccess {

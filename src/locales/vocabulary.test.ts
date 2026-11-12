@@ -137,20 +137,6 @@ describe("one name per thing", () => {
     expect(staleKeys).toEqual([]);
   });
 
-  it("the public docs name MausBot Cloud and the Cloud as the app does", () => {
-    const names = new Set(["OMB Cloud", "OpenMausBot Cloud", "MausBot Pro", "Connect to my Cloud", "your Cloud", "my Cloud"]);
-    const cloudNames = RETIRED.filter(([word]) => names.has(word));
-    const pages = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
-      const path = join(dir, name);
-      return statSync(path).isDirectory() ? pages(path) : /\.mdx?$/.test(name) ? [path] : [];
-    });
-    const offending = pages(join(ROOT, "apps/docs/content")).flatMap((path) =>
-      readFileSync(path, "utf8").split("\n").flatMap((text, index) => cloudNames
-        .filter(([, pattern]) => pattern.test(text))
-        .map(([word, , use]) => `${relative(ROOT, path).split("\\").join("/")}:${index + 1}: "${word}" (say ${use})`)));
-    expect(offending).toEqual([]);
-  });
-
   it("copy that points at a control names it exactly as the control is labelled", () => {
     const e = en as Record<string, string>;
     const source = (file: string) => readFileSync(join(ROOT, file), "utf8");

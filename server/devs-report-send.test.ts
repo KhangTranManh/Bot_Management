@@ -58,13 +58,21 @@ describe("sending a @devs report", () => {
 });
 
 describe("where reports go", () => {
-  it("is a fixture's loopback or https address, else a Cloud home's own origin, else the staging or production Cloud", () => {
+  it("is a fixture's loopback or https address from OMB_BUG_REPORT_URL, and nowhere otherwise", () => {
     expect(bugReportEndpoint({ OMB_BUG_REPORT_URL: "http://127.0.0.1:4400/api/bug-reports" })).toBe("http://127.0.0.1:4400/api/bug-reports");
-    expect(bugReportEndpoint({ OMB_BUG_REPORT_URL: "http://192.0.2.1/api/bug-reports" })).toBe("https://cloud.openmausbot.com/api/bug-reports");
-    expect(bugReportEndpoint({ OMB_BUG_REPORT_URL: "https://user:pw@evil.example/x" })).toBe("https://cloud.openmausbot.com/api/bug-reports");
-    expect(bugReportEndpoint({}, "https://cloud.openmausbot.com")).toBe("https://cloud.openmausbot.com/api/bug-reports");
-    expect(bugReportEndpoint({ OMB_CLOUD_STAGING: "1" })).toBe("https://omb-cloud-staging.fly.dev/api/bug-reports");
-    expect(bugReportEndpoint({})).toBe("https://cloud.openmausbot.com/api/bug-reports");
+    expect(bugReportEndpoint({ OMB_BUG_REPORT_URL: "https://reports.example/api/bug-reports" })).toBe("https://reports.example/api/bug-reports");
+    expect(bugReportEndpoint({ OMB_BUG_REPORT_URL: "http://192.0.2.1/api/bug-reports" })).toBe("");
+    expect(bugReportEndpoint({ OMB_BUG_REPORT_URL: "https://user:pw@evil.example/x" })).toBe("");
+    expect(bugReportEndpoint({ OMB_BUG_REPORT_URL: "not an address" })).toBe("");
+    expect(bugReportEndpoint({})).toBe("");
+  });
+
+  it("sends nothing and asks nothing when reports are off", async () => {
+    const calls: unknown[] = [];
+    const fetcher = (async (...args: unknown[]) => { calls.push(args); return new Response("{}"); }) as typeof fetch;
+    expect(await sendDevsReport("", {} as never, fetcher)).toEqual({ ok: false, retry: false, why: "refused", detail: "bug reports are switched off" });
+    expect(await devsStatusAsker("", null, fetcher)({ installId: "i", ids: ["a"] })).toBeNull();
+    expect(calls).toEqual([]);
   });
 });
 

@@ -1,11 +1,8 @@
-// The connected-apps service (cloudflare/composio-broker) with its own fake D1 and fake Composio, served over loopback
-// HTTP so a real OpenMausBot server can register with it, create triggers and long-poll events. Nothing leaves the
-// machine: Composio calls from the Worker are answered by the broker's test harness.
+// A loopback connected-apps fixture with fake D1 and Composio implementations.
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-/** The broker sources are Worker code outside this program's type world; loaded at run time only. */
-const HARNESS = new URL("../../cloudflare/composio-broker/src/test-harness.ts", import.meta.url).href;
+const HARNESS = new URL("./composio-broker-fixture/src/test-harness.ts", import.meta.url).href;
 
 interface FakeAccount { id: string; user_id: string; toolkit: { slug: string }; status: string; alias?: string }
 interface Harness {

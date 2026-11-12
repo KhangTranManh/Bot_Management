@@ -53,3 +53,19 @@ describe("goal insights stay inside the selected run", () => {
     expect(goalReports(room("r", rows), "a").map((report) => report.verdict)).toEqual(["PASS"]);
   });
 });
+
+describe("a goal that stopped for the person", () => {
+  it("offers the goal card to confirm, naming the thread and message the server needs", () => {
+    const group = { ...room("a", [goal("g", "needs-input")]), threadId: "thread-a" } as Group;
+    expect(officeNeeds([group]).map((need) => [need.id, need.accept])).toEqual([["g", { threadId: "thread-a", messageId: "g" }]]);
+  });
+  it("stops asking once the goal is completed", () => {
+    const done = goal("g", "needs-input");
+    done.goalRun = { ...done.goalRun!, status: "completed" };
+    expect(officeNeeds([room("a", [done])])).toEqual([]);
+  });
+  it("gives a pending question card no confirm action", () => {
+    const pending = message("q", { kind: "options", card: { title: "Duyệt lệnh", subtitle: "npm test", options: ["Allow"] } });
+    expect(officeNeeds([room("a", [pending])]).map((need) => need.accept)).toEqual([undefined]);
+  });
+});

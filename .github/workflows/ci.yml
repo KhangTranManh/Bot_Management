@@ -35,8 +35,7 @@ concurrency:
   # merges costs two runs, not one per merge (fifteen queued behind each other
   # in October 2026). The running one always finishes. Every other run has a
   # group no push can join: a merge group its own ref, the nightly run and each
-  # manual run (the release branch's, and the release-ci/v<version> lane that
-  # scripts/release-ci.mjs starts) their event and branch. A PR's group is
+  # manual run its event and branch. A PR's group is
   # named by its number, never by github.ref: a merged PR's closed event
   # reports the base branch as github.ref, so a ref-named group let every merge
   # cancel main's run (ci-stop-closed.yml).
@@ -147,8 +146,8 @@ jobs:
     needs: static
     if: contains(needs.static.outputs.jobs, '"build"')
     # The slow checks, about three minutes, beside the shards rather than ahead
-    # of them. A pull request that changes only docs, tests under scripts/ or
-    # the control plane cannot change what they check.
+    # of them. A pull request that changes only docs or tests under scripts/
+    # cannot change what they check.
     name: typecheck + build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -418,10 +417,7 @@ jobs:
   foss:
     needs: static
     if: contains(needs.static.outputs.jobs, '"foss"')
-    # LICENSING.md promises that deleting enterprise/ leaves a working
-    # open-source edition. Prove it on runtime changes: typecheck, the edition
-    # tests, and a boot that reports "oss" even with a key set.
-    name: open-source edition builds without enterprise/
+    name: open-source edition
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -432,8 +428,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Delete the enterprise folder
-        run: rm -rf enterprise
       - run: pnpm typecheck
       - run: pnpm exec vitest run server/enterprise.test.ts server/brand.test.ts
       - name: The server boots and reports the open-source edition
@@ -447,26 +441,6 @@ jobs:
           grep -q '"edition":"oss"' /tmp/omb-foss/edition.json
           grep -q 'no enterprise layer exists' /tmp/omb-foss/edition.json
           kill %1; wait %1 || true
-
-  control-plane:
-    needs: static
-    if: contains(needs.static.outputs.jobs, '"control-plane"')
-    name: control-plane check + workerd tests + dry run
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm control-plane:check
-      - run: pnpm control-plane:test
-      - run: pnpm control-plane:dry-run
 
   relay:
     needs: static
@@ -498,57 +472,6 @@ jobs:
       - run: pnpm test
         env:
           RELAY_FUZZ_MS: ${{ github.event_name == 'schedule' && '600000' || '20000' }}
-
-  deploy-composio-broker:
-    # Only deploys on push to upstream main. PRs run the control-plane tests
-    # but do not deploy: the wiring is exercised end-to-end only by a merged
-    # commit, so an unreviewed branch can never push to production. Closes
-    # the deploy gap that left #1914's broker fix (45cc2cf) sitting in
-    # source without reaching Cloudflare.
-    needs: [control-plane]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    name: deploy composio broker (Cloudflare Worker)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      # A repo without the secret (a fork, or before the token is created)
-      # skips the deploy with a warning instead of failing every main push.
-      - id: token
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning title=Composio broker not deployed::CLOUDFLARE_API_TOKEN is not set, so the broker Worker was not deployed."
-          fi
-      - if: steps.token.outputs.present == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - if: steps.token.outputs.present == 'true'
-        uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
-      - if: steps.token.outputs.present == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: pnpm
-      - if: steps.token.outputs.present == 'true'
-        run: pnpm install --frozen-lockfile
-      - if: steps.token.outputs.present == 'true'
-        run: pnpm broker:check
-      - if: steps.token.outputs.present == 'true'
-        run: pnpm broker:test
-      - name: Deploy the composio broker Worker via Wrangler
-        if: steps.token.outputs.present == 'true'
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # Mirrors the local `pnpm broker:deploy` script so CI is the same
-          # command a developer runs by hand. The token is created in the
-          # Cloudflare dashboard with Workers Scripts:Edit on the broker
-          # account; store it as the CLOUDFLARE_API_TOKEN repo secret.
-          command: deploy --config cloudflare/composio-broker/wrangler.jsonc
 
   ui-smoke:
     needs: static

@@ -6,18 +6,6 @@ protocols:
   - name: OpenMausBot package install
     schemes: [openmausbot]
 
-# In-app auto-update reads latest-mac.yml + the .zip (macOS) or latest.yml +
-# the NSIS .exe (Windows) from the PUBLIC releases in this source repo.
-# Public → no token on users' machines. Baked into
-# app-update.yml; both metadata files are emitted here even with
-# --publish never, and must be uploaded to the GitHub release alongside the
-# artifacts — a release missing latest.yml leaves every Windows install
-# stranded on its installed version.
-publish:
-  - provider: github
-    owner: milind-soni
-    repo: OpenMausBot
-
 directories:
   buildResources: build
   output: release
@@ -44,6 +32,10 @@ files:
   - "!electron/resources/recorder-helper.swift"
   - "!electron/resources/recorder-helper-Info.plist"
   - "!electron/resources/OpenMausBot Recorder.app/**"
+  - "!electron/updater.mjs"
+  - "!electron/updater-coordinator.mjs"
+  - "!electron/update-when-quiet.mjs"
+  - "!electron/vendor/**"
   - "!**/node_modules/**"
   - src/locales/*.json
   - "!src/locales/source-hashes.json"
@@ -97,8 +89,6 @@ extraResources:
 mac:
   # Two single-arch artifacts rather than one universal binary: the app is
   # architecture-specific, and universal would make users download both halves.
-  # electron-updater picks by filename (arm64-marked files on Apple silicon,
-  # unmarked ones on Intel), so latest-mac.yml must list all four files.
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -184,12 +174,7 @@ win:
   # No signing config yet (would go under win.signtoolOptions or
   # win.azureSignOptions — eb 26 nests it, there is no top-level
   # win.certificateFile). The installer is unsigned, so SmartScreen shows
-  # "unknown publisher" on first run (README says so). verifyUpdateCodeSignature
-  # defaults true, but electron-updater skips the check when app-update.yml
-  # carries no publisherName — so auto-update still works today. Do NOT set
-  # publisherName without actually signing, or every update is rejected as
-  # untrusted; and once signed, keep the cert subject stable (or list both old
-  # and new in publisherName) or you strand already-installed users.
+  # "unknown publisher" on first run (README says so).
 
 nsis:
   oneClick: true
@@ -213,7 +198,7 @@ linux:
   executableName: openmausbot
   synopsis: Your own team of AI bots, in a chat app
   description: A local-first chat app for running a team of AI agents.
-  maintainer: Milind Soni <46266943+milind-soni@users.noreply.github.com>
+  maintainer: Khang Tran <KhangTranManh@users.noreply.github.com>
   vendor: OpenMausBot
   syncDesktopName: true
   # The reviewed x64 CLI runtime is staged before packaging and remains

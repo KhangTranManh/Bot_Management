@@ -1,13 +1,7 @@
 import { parseJson, type JsonValue } from "./schema.ts";
-import { isBotPackage, parseBotPackage, parsePackageDocument, upgradeV1, type PackageDocument, type ParsedBotPackage } from "./bot-package.ts";
-import { PACKAGE_V1_VERSION } from "../shared/package-format.ts";
+import { isBotPackage, parseBotPackage, parsePackageDocument, type PackageDocument, type ParsedBotPackage } from "./bot-package.ts";
 import { parseTeamManifest, type ParsedTeamManifest } from "./team-manifest.ts";
 
-export const TEAM_LIBRARY_REPOSITORY = "https://github.com/milind-soni/openmausbot-teams";
-export const TEAM_LIBRARY_RAW_ROOT = "https://raw.githubusercontent.com/milind-soni/openmausbot-teams/main";
-export const TEAM_LIBRARY_CATALOG_URL = `${TEAM_LIBRARY_RAW_ROOT}/catalog.json`;
-
-const MAX_CATALOG_BYTES = 256_000;
 const MAX_MANIFEST_BYTES = 1_000_000;
 
 export interface TeamCatalogEntry {
@@ -29,7 +23,7 @@ export interface TeamCatalogEntry {
 export interface TeamCatalog {
   format: "openmaus.catalog";
   version: 1;
-  repositoryUrl: typeof TEAM_LIBRARY_REPOSITORY;
+  repositoryUrl: string;
   teams: TeamCatalogEntry[];
 }
 
@@ -113,7 +107,7 @@ export function parseTeamCatalog(value: unknown): TeamCatalog {
   return {
     format: "openmaus.catalog",
     version: 1,
-    repositoryUrl: TEAM_LIBRARY_REPOSITORY,
+    repositoryUrl: "",
     teams,
   };
 }
@@ -153,8 +147,8 @@ async function fetchText(url: string, maxBytes: number, fetcher: Fetcher): Promi
   return raw;
 }
 
-export async function fetchTeamCatalog(fetcher: Fetcher = fetch): Promise<TeamCatalog> {
-  return parseTeamCatalog(await fetchJson(TEAM_LIBRARY_CATALOG_URL, MAX_CATALOG_BYTES, fetcher));
+export async function fetchTeamCatalog(): Promise<TeamCatalog> {
+  return { format: "openmaus.catalog", version: 1, repositoryUrl: "", teams: [] };
 }
 
 export type ParsedShareableTeam = ParsedTeamManifest | ParsedBotPackage | PackageDocument;
@@ -172,45 +166,16 @@ async function fetchShareable(url: string, fetcher: Fetcher): Promise<ParsedShar
     : parseShareable(await fetchJson(url, MAX_MANIFEST_BYTES, fetcher));
 }
 
-export async function fetchLibraryTeam(slug: string, fetcher: Fetcher = fetch): Promise<ParsedShareableTeam> {
+export async function fetchLibraryTeam(slug: string): Promise<ParsedShareableTeam> {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error("That team name is invalid");
-  const catalog = await fetchTeamCatalog(fetcher);
-  const entry = catalog.teams.find((team) => team.slug === slug);
-  if (!entry) throw Object.assign(new Error("That library team was not found"), { status: 404 });
-  return fetchShareable(`${TEAM_LIBRARY_RAW_ROOT}/${entry.package ?? entry.manifest}`, fetcher);
+  throw Object.assign(new Error("That library team was not found"), { status: 404 });
 }
-
-const MAX_CHIEF_TEAMS = 30;
-const MAX_ROLE_TEXT = 280;
 
 export interface LibraryRole { name: string; title: string; does?: string; lead?: true }
 export interface LibraryTeamRoles { name: string; summary: string; roles: LibraryRole[] }
 
-const oneLine = (text: string, max: number): string => {
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
-};
-
-function libraryRoles(team: ParsedShareableTeam): LibraryRole[] {
-  const role = (member: { name: string; title?: string; description?: string }, lead: boolean): LibraryRole => ({
-    name: member.name, title: member.title?.trim() || "Specialist",
-    ...(member.description?.trim() ? { does: oneLine(member.description, MAX_ROLE_TEXT) } : {}),
-    ...(lead ? { lead: true as const } : {}),
-  });
-  if (!("package" in team)) return team.team.members.map((member) => role(member, false));
-  const pkg = team.version === PACKAGE_V1_VERSION ? upgradeV1(team).package : team.package;
-  return pkg.agents.map((agent) => role(agent, agent.key === pkg.team?.leader));
-}
-
-/** Each ready-made team's name, one line and roles: enough for a Chief to create the team itself, one specialist at a
- * time. A team whose file cannot be read keeps its name and summary with no roles. */
-export async function libraryTeamRoles(fetcher: Fetcher = fetch): Promise<LibraryTeamRoles[]> {
-  const catalog = await fetchTeamCatalog(fetcher);
-  return Promise.all(catalog.teams.slice(0, MAX_CHIEF_TEAMS).map(async (entry) => ({
-    name: entry.name,
-    summary: entry.summary,
-    roles: await fetchShareable(`${TEAM_LIBRARY_RAW_ROOT}/${entry.package ?? entry.manifest}`, fetcher).then(libraryRoles, () => []),
-  })));
+export async function libraryTeamRoles(): Promise<LibraryTeamRoles[]> {
+  return [];
 }
 
 function safeSegment(value: string): boolean {

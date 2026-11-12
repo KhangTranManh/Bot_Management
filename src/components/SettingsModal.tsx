@@ -8,7 +8,6 @@ import { AdminOnly } from "./AdminOnly";
 import { KeysPage } from "./keys/KeysPage";
 import { KEY_CATALOG, keyMatches, keySection, type KeyEntry } from "./keys/key-catalog";
 import { openKeySettings, useKeyFocus } from "./keys/key-focus";
-import { AnalyticsRow } from "./AnalyticsRow";
 import { UpdatesConsentRow } from "./UpdatesConsent";
 import { OpenAtLoginRow } from "./OpenAtLoginRow";
 import { DefaultBotSidebarRow } from "./DefaultBotControls";
@@ -362,7 +361,6 @@ export function SettingsModal() {
             <OpenAtLoginRow />
             <NewBotEffortRow />
             <SavedStepsRow />
-            <AnalyticsRow />
             <UpdatesConsentRow />
             <DefaultBotSettings />
 

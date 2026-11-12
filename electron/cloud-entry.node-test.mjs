@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { patchOrganizationUpdater } from "../scripts/patch-organization-updater.mjs";
 import { CLOUD_DEEP_LINK, createCloudEntry, isCloudDeepLink, takeCloudDeepLink } from "./cloud-entry.mjs";
 
 const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -32,7 +31,6 @@ test("the Cloud protocol is a fixed action without URL routing or credentials", 
     assert.equal(isCloudDeepLink(value), false, String(value));
   }
 });
-
 test("consuming a launch action prevents it replaying on a later restart without changing other arguments", () => {
   const original = ["/Applications/OpenMausBot", "--profile=fixture", "openmausbot://cloud?ignored", "openmausbot://organization", "openmausbot://install/example"];
   const argv = [...original, "openmausbot://cloud", "openmausbot://cloud"];
@@ -109,7 +107,7 @@ test("a failed open is contained and a later link still opens", async () => {
   assert.deepEqual(h.calls, ["open", "reveal", "open"]);
 });
 
-test("a consumed launch link is not replayed by the companion or updater relaunch", () => {
+test("a consumed launch link is not replayed by the companion relaunch", () => {
   const argv = ["/fixture/OpenMausBot", "--fixture", "openmausbot://cloud", "openmausbot://cloud?ignored"];
   takeCloudDeepLink(argv);
   const calls = [];
@@ -117,9 +115,7 @@ test("a consumed launch link is not replayed by the companion or updater relaunc
     desktopShutdownStarted: false, process: { argv }, setTimeout: callback => { callback(); return {}; },
     app: { relaunch: options => calls.push(options.args), quit: () => {} },
   });
-  const patched = patchOrganizationUpdater("      relaunch() {\n        this.app.relaunch();\n      }");
-  runInNewContext(`({ app, ${patched} }).relaunch();`, { process: { argv }, app: { relaunch: options => calls.push(options.args) } });
-  assert.deepEqual(calls, [["--fixture", "openmausbot://cloud?ignored"], ["--fixture", "openmausbot://cloud?ignored"]]);
+  assert.deepEqual(calls, [["--fixture", "openmausbot://cloud?ignored"]]);
 });
 
 test("main takes the link from launch arguments, open-url and a second instance", () => {

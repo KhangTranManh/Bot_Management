@@ -6,7 +6,6 @@ import { existsSync, readdirSync, readFileSync, statfsSync } from "node:fs";
 import { arch, cpus, homedir, release, totalmem } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 
-import { PRODUCTION_CLOUD_ORIGIN } from "../devs-report-send.ts";
 import { EXIT, flag, usageError } from "./args.ts";
 import type { VerbContext, VerbOutcome } from "./context.ts";
 
@@ -92,7 +91,7 @@ async function containerCheck(probe: HostProbe): Promise<HostCheck> {
   return fail("containers", "Neither Docker nor Podman is installed", "sudo apt-get install -y docker.io   (or podman)");
 }
 
-/** What the MausBot connector on this server says of it, when one runs there: its own checks (connector/src/host.ts). */
+/** What the MausBot connector on this server says when one runs there. */
 export interface ConnectorReport {
   checks: { id: string; ok: boolean; warning?: boolean; fix?: string }[];
 }
@@ -289,16 +288,7 @@ export function systemProbe(): HostProbe {
       }
     },
     async clockOffset() {
-      try {
-        const before = Date.now();
-        const response = await fetch(PRODUCTION_CLOUD_ORIGIN, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(5_000) });
-        const after = Date.now();
-        const date = Date.parse(response.headers.get("date") ?? "");
-        // An HTTP date is whole seconds: the server's clock was somewhere in the second after it.
-        return Number.isFinite(date) ? (before + after) / 2 - (date + 500) : null;
-      } catch {
-        return null;
-      }
+      return null;
     },
     async serverAnswers(port) {
       try {

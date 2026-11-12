@@ -1,5 +1,4 @@
-// Digests computed from the official GitHub assets on 2026-09-08, except the versioned Windows vendor build; update pins
-// only through a reviewed native end-to-end run. The Dockerfile keeps the official Linux version.
+// Digests computed from the official GitHub v0.37.0 assets; update pins only through a reviewed native end-to-end run.
 export const AGENT_BROWSER_VERSION = "0.37.0";
 
 export interface AgentBrowserReleaseAsset {
@@ -8,10 +7,6 @@ export interface AgentBrowserReleaseAsset {
   asset: string;
   sha256: string;
   bytes: number;
-  /** A reviewed platform-specific vendor revision; other assets use the upstream version. */
-  version?: string;
-  /** Exact release URL for a reviewed vendor build, never a mutable latest URL. */
-  url?: string;
 }
 
 const RELEASES = new Map<string, AgentBrowserReleaseAsset>([
@@ -41,23 +36,16 @@ const RELEASES = new Map<string, AgentBrowserReleaseAsset>([
   ],
   [
     "win32-x64",
-    {
-      // Upstream 0.37.0 still lacks vercel-labs/agent-browser#1781's Windows cold-start fix.
-      // Retain the native-verified revision until its replacement is tested.
-      target: "win32-x64", version: "0.36.0-omb.1",
-      asset: "agent-browser-win32-x64-0.36.0-omb.1.exe",
-      url: "https://github.com/milind-soni/OpenMausBot/releases/download/browser-engine-v0.36.0-omb.1/agent-browser-win32-x64-0.36.0-omb.1.exe",
-      sha256: "33bee834f6a6072ec8688b0914726e0262874d758f69f27e8baf7eaac6b5ed15", bytes: 13806080,
-    },
+    { target: "win32-x64", asset: "agent-browser-win32-x64.exe", sha256: "3345b9579a6e266a97c1dfc16b2c4af581de68830c77148da0baee945d804d79", bytes: 13931520 },
   ],
 ]);
 
 export function agentBrowserReleaseUrl(asset: AgentBrowserReleaseAsset): string {
-  return asset.url ?? `https://github.com/vercel-labs/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/${asset.asset}`;
+  return `https://github.com/vercel-labs/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/${asset.asset}`;
 }
 
-export function agentBrowserReleaseVersion(asset: AgentBrowserReleaseAsset | null): string {
-  return asset?.version ?? AGENT_BROWSER_VERSION;
+export function agentBrowserReleaseVersion(_asset: AgentBrowserReleaseAsset | null): string {
+  return AGENT_BROWSER_VERSION;
 }
 
 /**

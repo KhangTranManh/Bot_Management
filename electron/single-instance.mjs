@@ -7,10 +7,3 @@ export function activateExistingWindow(windows) {
   target.focus();
   return true;
 }
-
-// Idempotent: both Electron and electron-updater can emit before-quit-for-update for the same install.
-export function releaseSingleInstanceLock(app) {
-  if (!app.hasSingleInstanceLock()) return false;
-  app.releaseSingleInstanceLock();
-  return true;
-}

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 // where the event runs it), and the subsets in VITEST_SUBSETS.
 export const SELECTABLE_JOBS = [
   "build", "vitest", "behavior-evals", "packaged-server", "windows-cua", "electron-smokes", "cloudflared-linux-arm64",
-  "foss", "control-plane", "ui-smoke", "browser-identity", "package-linux", "browser-driver", "relay",
+  "foss", "ui-smoke", "browser-identity", "package-linux", "browser-driver", "relay",
 ];
 
 // The server imports Electron and renderer modules, and the macOS smokes run
@@ -19,7 +19,7 @@ const SERVER_CHECKS = [
   "build", "linux-tests", "host-tests", "behavior-evals", "packaged-server", "foss", "electron-smokes",
   "ui-smoke", "browser-identity", "browser-driver", "package-linux",
 ];
-const EVERY_CHECK = [...SERVER_CHECKS, "windows-cua", "cloudflared-linux-arm64", "control-plane", "relay"];
+const EVERY_CHECK = [...SERVER_CHECKS, "windows-cua", "cloudflared-linux-arm64", "relay"];
 
 /** What a pull request's change in each area can affect. */
 export const AREA_CHECKS = {
@@ -31,7 +31,6 @@ export const AREA_CHECKS = {
   desktop: SERVER_CHECKS,
   // The Windows CUA job starts these the way the installed app does, then lends the PC's screen through them.
   "windows-computer-control": [...SERVER_CHECKS, "windows-cua"],
-  "control-plane": ["control-plane"],
   // The relay is its own package with its own lockfile; nothing outside relay/ reaches it except the shared vectors,
   // which it keeps a pinned copy of.
   relay: ["relay"],
@@ -52,7 +51,6 @@ export const VITEST_SUBSETS = {
     files: [
       "src/",
       "electron/menu.test.mjs",
-      "electron/updater.test.mjs",
       "scripts/generate-locale.test.mjs",
       "scripts/testing/bot-tools-ui.e2e.test.ts",
       "scripts/testing/key-readback.e2e.test.ts",
@@ -91,6 +89,7 @@ export const VITEST_SUBSETS = {
       "server/cloud-team-setup-request.e2e.test.ts",
       "server/cloud-team.e2e.test.ts",
       "server/host/brief-words.test.ts",
+      "server/host/goal-cards.test.ts",
       "server/host/lending-lifts.test.ts",
       "server/lent-folders.e2e.test.ts",
       "server/one-home-keep.e2e.test.ts",
@@ -160,7 +159,7 @@ export const VITEST_SUBSETS = {
   },
   "docs-tests": {
     part: "docs tests",
-    files: ["scripts/testing/analytics-docs.test.ts", "server/model-providers-docs.test.ts", "src/locales/vocabulary.test.ts"],
+    files: ["scripts/testing/verification-docs.test.ts"],
     shards: 1,
     nodeTests: false,
   },
@@ -185,15 +184,14 @@ export const DOCS = /^(?:[^/]+\.md|docs\/.+\.md|\.github\/FUNDING\.yml)$/;
 // anything. English is the source every test reads, so en.json is web.
 const AREAS = [
   [DOCS, "docs"],
-  [/^(?:apps\/)?docs\//, "docs"],
+  [/^docs\//, "docs"],
   [/^scripts\/.+\.test\.[cm]?[jt]sx?$/, "script-tests"],
   [/^src\/locales\/(?:(?!en\.json$)[^/]+\.json|[^/]+\.test\.ts)$/, "locales"],
   [/^(?:src|public)\/|^[^/]+-preview\.html$/, "web"],
   [/^companion\/src\/e2e\/vectors\//, "e2e-vectors"],
-  [/^(?:server|shared|enterprise|companion|evals|skills|deploy|cloudflare\/composio-broker)\/|^(?:Dockerfile|\.dockerignore|compose\.yaml)$/, "server"],
+  [/^(?:server|shared|companion|evals|skills|deploy)\/|^(?:Dockerfile|\.dockerignore|compose\.yaml)$/, "server"],
   [/^electron\/(?:cua|cua-failure|cua-connection|capabilities|screen-status|shared-cua-connection|shared-computer-access|lent-screen-tools|lent-screen-failures|paced-typing)\.[cm]js$/, "windows-computer-control"],
   [/^(?:electron|build)\/|^(?:electron-builder\.yml|index\.html|rail\.html)$/, "desktop"],
-  [/^cloudflare\/control-plane\//, "control-plane"],
   [/^relay\//, "relay"],
 ];
 
@@ -213,13 +211,12 @@ export const FULL_SCOPE = { areas: ["everything"], checks: [...EVERY_CHECK].sort
 export const MAIN_SCOPE = {
   areas: ["main"],
   checks: [
-    "behavior-evals", "browser-identity", "build", "control-plane", "electron-smokes", "foss", "host-tests", "linux-tests", "packaged-server",
+    "behavior-evals", "browser-identity", "build", "electron-smokes", "foss", "host-tests", "linux-tests", "packaged-server",
     "ui-smoke",
   ],
 };
 
-/** A push whose commit already passed the CI gate in the merge queue: only the control-plane checks the broker deploy needs. */
-export const QUEUED_SCOPE = { areas: ["tested in the merge queue"], checks: ["control-plane"] };
+export const QUEUED_SCOPE = { areas: ["tested in the merge queue"], checks: [] };
 
 /** A pull request's areas and the checks they select, from its changed files. */
 export function selectCiScope(files) {
@@ -265,8 +262,8 @@ export function windowsReason({ files, labels = [], hostE2e = [], lines = () => 
   return line ? `the changed line ${JSON.stringify(line.slice(0, 80))}` : null;
 }
 
-/** True when two package.json texts differ only in the top-level "version"
- * (the release bump, prepare-release.yml). Anything else that changed, a
+/** True when two package.json texts differ only in the top-level "version".
+ * Anything else that changed, a
  * reordered key included, or text that is not a JSON object, is false. */
 export function versionOnlyPackageJson(before, after) {
   let a, b;

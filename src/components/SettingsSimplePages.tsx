@@ -6,7 +6,6 @@ import { appVersion } from "@/lib/app-links";
 import { SIMPLE_ONLY } from "@/lib/simple-only";
 import type { LocaleKey } from "@/locales";
 import { productName } from "../lib/brand";
-import { AnalyticsRow } from "./AnalyticsRow";
 import { UpdatesConsentRow } from "./UpdatesConsent";
 import { OpenAtLoginRow } from "./OpenAtLoginRow";
 import { DefaultBotSidebarRow } from "./DefaultBotControls";
@@ -107,7 +106,6 @@ export function SimpleGeneralPage({ has, peopleOpen, onLooks, onMore }: { has: H
             <DefaultBotSidebarRow simple />
             <TalkShortcutRow />
             <AttachmentStorageSettings />
-            <AnalyticsRow simple />
           </SettingsRows>
         </SettingsGroup>
       )}

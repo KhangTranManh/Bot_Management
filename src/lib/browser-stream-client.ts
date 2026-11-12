@@ -17,7 +17,7 @@ export type PreviewStreamHostSetup =
 /** The server's LIBRARIES_COMMAND and SANDBOX_STEPS_URL: a close reason is too short to carry the link. */
 export const PREVIEW_STREAM_LIBRARIES_COMMAND = "sudo openmausbot browser install --with-deps";
 export const PREVIEW_STREAM_SANDBOX_STEPS_URL =
-  "https://github.com/milind-soni/OpenMausBot/blob/main/docs/deploy-vps.md#ubuntu-2404-browser-sandbox";
+  "https://github.com/KhangTranManh/Bot_Management/blob/main/docs/deploy-vps.md#ubuntu-2404-browser-sandbox";
 
 export type PreviewViewportSetting =
   | { readonly mode: "fill" }

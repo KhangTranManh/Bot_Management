@@ -26,8 +26,11 @@ export function officeSeats<T extends { id: string }>(members: readonly T[], rol
   return (["lead", "work", "check"] as const).flatMap((stage) => column(stage).map((bot, n, all) =>
     ({ bot, stage, x: STAGE_X[stage], y: (n + .5) * depth / all.length })));
 }
+function latestGoalMessage(group: Pick<Group, "messages">) {
+  return [...group.messages].reverse().find((message) => message.goalRun);
+}
 export function latestGoal(group: Pick<Group, "messages">) {
-  return [...group.messages].reverse().find((message) => message.goalRun)?.goalRun;
+  return latestGoalMessage(group)?.goalRun;
 }
 export function pendingCards(messages: readonly Message[]) {
   return messages.filter((message) => message.kind === "options" && message.card &&
@@ -43,10 +46,11 @@ export function officeState(bot: Bot, job?: MemberNow): OfficeState {
 }
 export function officeNeeds(groups: readonly Group[]) {
   return groups.flatMap((group) => {
-    const cards = pendingCards(group.messages).map((message) => ({ id: message.id, group, title: message.card!.title, detail: message.card!.subtitle }));
-    const goal = latestGoal(group);
+    const cards = pendingCards(group.messages).map((message) => ({ id: message.id, group, title: message.card!.title, detail: message.card!.subtitle, accept: undefined as { threadId: string; messageId: string } | undefined }));
+    const goalMessage = latestGoalMessage(group);
+    const goal = goalMessage?.goalRun;
     if (goal && ["needs-input", "limit-reached", "paused"].includes(goal.status)) {
-      cards.push({ id: goal.runId, group, title: goal.status === "limit-reached" ? "Goal hết lượt" : "Goal cần bạn", detail: goal.detail ?? goal.goal });
+      cards.push({ id: goal.runId, group, title: goal.status === "limit-reached" ? "Goal hết lượt" : "Goal cần bạn", detail: goal.detail ?? goal.goal, accept: { threadId: group.threadId, messageId: goalMessage!.id } });
     }
     return cards;
   });
