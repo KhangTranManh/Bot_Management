@@ -53,6 +53,7 @@ import { ProfileFields } from "./ProfileSettings";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
 import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
+import { AppliedReferencesSettings } from "./AppliedReferencesSettings";
 import { PinnedPanelsSettings } from "./PinnedPanelsSettings";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
@@ -377,6 +378,7 @@ export function SettingsModal() {
             <ThreadCleanupSettings />
             <AttachmentStorageSettings />
             <PinnedPanelsSettings />
+            <AppliedReferencesSettings />
 
             {!remoteActive && <ReplayTourRow />}
             <UpdatesRow />

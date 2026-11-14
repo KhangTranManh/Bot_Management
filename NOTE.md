@@ -963,6 +963,16 @@ Worker 1 và 2, Tester Sonnet 5.5, Reviewer Gemini 3.8 Flash (high). Branch mode
 - Chưa kiểm: tiêu chí 9 (1366/390px, không lỗi console) vì đội không có trình duyệt; chưa đọc nội dung test; nhánh tích hợp chưa
   merge vào `D:\testproject\Netflix`; chưa đo token/quota.
 
+### 12.14 Streamflix chạy lại với playbook mới (Ponytail → Worker/Reviewer, Understand Anything → Lead) (2026-11-15)
+Cùng SPEC, đội, branch mode và lệnh verify như §12.13, phòng mới, `/plan` không còn câu hỏi mở. Kết quả **completed**, một lần
+khởi động, 13 lượt (chạm giới hạn), 16,1 phút; tôi chạy lại trong worktree tích hợp: build qua, `npm test` 25/25, shape `code shape ok`.
+- So với §12.13: mã nguồn 2.447 dòng (trước 2.865, ít hơn 15%), 51 file (trước 48), dòng dài nhất 117 (trước 115), không dòng nào
+  trên 120, không file nào trên 300 dòng. Test 25 (trước 49), 7 file test (trước 8): một phần phần giảm có thể là ít test hơn.
+- Một lần chạy mỗi bên và điều kiện không hoàn toàn giống (lần A bị chặn ba lần trước khi chạy), nên chỉ là gợi ý. Lần B ghi các
+  việc còn lại: `sample.mp4` có thể không phát trong trình duyệt, 4 cảnh báo `npm audit`, phiên đăng nhập mất khi khởi động lại nếu
+  không có `SESSION_SECRET`; tiêu chí 9 (1366/390px) vẫn chưa kiểm.
+- Chưa đọc nội dung test hai bên; chưa đo token/quota. Cần thêm lần chạy trên một dự án khác trước khi coi playbook mới là cải tiến.
+
 ## 13. Branch riêng cho từng Worker, hợp đồng vai, đội theo quota — thiết kế và triển khai
 
 ### 13.1 Vì sao
@@ -1317,3 +1327,11 @@ từ plan, audit `writes` bắt nếu vẫn ghi lén.
    - Lead chạy việc dài (huấn luyện) ở chế độ tách rời ngay từ lượt đầu để không tốn lượt chờ.
    - Thử Reviewer bằng lỗi cài sẵn; hai lần chạy chưa lần nào nó tìm ra lỗi thật.
    - Chưa đo token/quota, chưa kiểm 1366/390px cho Netflix (đội không có trình duyệt).
+8. **ĐÃ LÀM (2026-11-15)** — áp dụng kỹ thuật từ hai repo ngoài vào playbook (không cài plugin): Ponytail → Worker (làm thay đổi
+   nhỏ nhất nhưng đủ, liệt kê mọi nơi bị ảnh hưởng, sửa lỗi ở gốc sau khi tìm mọi nơi gọi, không cắt validation/bảo mật, báo cái đã
+   bỏ qua) và Reviewer (đọc cả code bị chạm tới, không chỉ diff); Understand Anything → Lead (vẽ bản đồ dự án có sẵn trước khi
+   lập kế hoạch, tác động một bước: file import/gọi file đổi đi cùng task, kiểm bản đồ/outline còn khớp code). Ghi nhận trong
+   `shared/references.ts` (nguồn, giấy phép, lấy gì, bỏ gì và vì sao, file chứa kỹ thuật, bằng chứng) và hiện ở App Settings →
+   General (Advanced) mục "Applied references"; test kiểm mỗi nguồn chỉ một lần và file được ghi có tồn tại. Chưa có bằng chứng
+   model thật: chạy lại Netflix có/không có playbook mới để so dòng code, test và số lượt; Understand Anything còn phải thử trên
+   repo nhỏ rồi Ciel. Test `i18n.test.ts › activePackComplete` đang lỗi từ trước (gói pt-br thiếu key), không do thay đổi này.
