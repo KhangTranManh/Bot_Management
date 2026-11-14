@@ -93,6 +93,12 @@ describe("request source for the lockout", () => {
 });
 
 describe("scopes", () => {
+  it("lets a member read a room thread's jobs, which the Office and team status poll, and nothing that changes them", () => {
+    expect(requiredScope("GET", "/api/groups/room-1/now")).toBe("client");
+    expect(requiredScope("POST", "/api/groups/room-1/now")).toBe("admin");
+    expect(requiredScope("GET", "/api/groups/room-1/now/extra")).toBe("admin");
+  });
+
   it("lets a member reach a connection card's authorize, whose handler decides who may sign in, and nothing past it", () => {
     for (const [method, path] of [
       ["POST", "/api/bots/bot-1/connector-cards/card-1/authorize"],

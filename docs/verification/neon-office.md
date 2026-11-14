@@ -40,7 +40,7 @@ The command prints the fixture URL and persistent server log path. Screenshots a
 ## Related checks
 
 ```sh
-pnpm exec vitest run src/components/office/office-model.test.ts src/components/room-panel/RoomWorkflowSettings.test.ts src/lib/skins.test.ts src/lib/skins.default.test.ts electron/skin-overlay.test.mjs
+pnpm exec vitest run src/components/office/office-model.test.ts src/components/room-panel/VerifyCommandsEditor.test.ts src/lib/skins.test.ts src/lib/skins.default.test.ts electron/skin-overlay.test.mjs
 pnpm check:contrast
 pnpm i18n:check
 pnpm build

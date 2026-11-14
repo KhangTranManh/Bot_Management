@@ -25,9 +25,14 @@ describe("goal cards keep the brief and the conflicts", () => {
   it("through progress and the finish, with secrets taken out of the brief", () => {
     const { lines, goals } = cards();
     const run = goals.start("room", lead, "Ship checkout", "run-1");
-    goals.brief("room", run, { goal: "Ship checkout", inScope: ["cart"], outOfScope: [], acceptance: ["token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 stays out"], constraints: [], openQuestions: [] });
+    goals.brief("room", run, {
+      goal: "Ship checkout", inScope: ["cart"], outOfScope: [], acceptance: ["token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 stays out"], constraints: [], openQuestions: [],
+      structure: [{ name: "web", paths: ["web/src"], owns: "screens, key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789" }, { name: "tests", paths: ["tests"], owns: "contract tests", readOnly: true }],
+    });
     expect(lines[0]!.goalRun?.brief?.goal).toBe("Ship checkout");
     expect(lines[0]!.goalRun?.brief?.acceptance[0]).not.toContain("abcdefghijklmnopqrstuvwxyz");
+    expect(lines[0]!.goalRun?.brief?.structure).toMatchObject([{ name: "web", paths: ["web/src"] }, { name: "tests", paths: ["tests"], owns: "contract tests", readOnly: true }]);
+    expect(lines[0]!.goalRun?.brief?.structure?.[0]?.owns).not.toContain("abcdefghijklmnopqrstuvwxyz");
     goals.conflict("room", run, conflict(1));
     goals.baseline("room", run, { startedAt: 1, finishedAt: 2, setup: [], checks: [{ id: "tests", exitCode: 1, expectExit: 0, output: "token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789" }] });
     expect(lines[0]!.goalRun?.baseline?.checks[0]?.output).not.toContain("abcdefghijklmnopqrstuvwxyz");

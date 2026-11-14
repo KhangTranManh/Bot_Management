@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RoomProjectProfile } from "../shared/wire.ts";
+import type { GoalPlanSource } from "../shared/room-plan.ts";
+import { parseGoalBrief } from "./goal-brief.ts";
 import type { GoalBaseline } from "../shared/group-goal-run.ts";
 import type { TeamRole } from "../shared/team-roles.ts";
 import type { GoalBrief, GoalConflict } from "../shared/group-goal-run.ts";
@@ -171,10 +173,16 @@ describe("groupGoalCoordinatorInstructions harness note", () => {
   });
 });
 
-/** A plan carries a brief, as the Lead is told to; `brief: null` sends one without it. */
+const WHOLE_PROJECT = [{ name: "project", paths: ["."], owns: "the whole project" }];
+
+/** A plan carries a brief with a structure, as the Lead is told to; `brief: null` sends no brief, and a brief with
+ * `structure: null` sends one without a structure. */
 const envelope = (decision: Record<string, unknown>) => {
   const withBrief = decision.tasks !== undefined && decision.brief === undefined ? { ...decision, brief: { goal: "Get every test passing" } } : decision;
-  const sent = withBrief.brief === null ? Object.fromEntries(Object.entries(withBrief).filter(([key]) => key !== "brief")) : withBrief;
+  const brief = withBrief.brief as Record<string, unknown> | null | undefined;
+  const withStructure = brief && brief.structure === undefined ? { ...withBrief, brief: { ...brief, structure: WHOLE_PROJECT } }
+    : brief && brief.structure === null ? { ...withBrief, brief: Object.fromEntries(Object.entries(brief).filter(([key]) => key !== "structure")) } : withBrief;
+  const sent = withStructure.brief === null ? Object.fromEntries(Object.entries(withStructure).filter(([key]) => key !== "brief")) : withStructure;
   return `Update.\n${GROUP_GOAL_CONTROL_OPEN}${JSON.stringify(sent)}${GROUP_GOAL_CONTROL_CLOSE}`;
 };
 const settled = (replyText: string): GoalStepResult => ({ ran: true, replyText, outcome: "settled" });
@@ -205,6 +213,7 @@ function goalRun(options: {
   laneEdits?: (botId: string, sinceMs: number) => Promise<string[]>;
   steerLane?: (botId: string, text: string) => Promise<boolean>;
   watchMs?: number;
+  planSource?: GoalPlanSource;
 }) {
   const members = options.members ?? [{ id: "solo-id", name: "Solo" }];
   const run = { goal: "Get every test passing", turnCount: 0, maxTurns: GROUP_GOAL_MAX_TURNS, finished: false };
@@ -213,6 +222,7 @@ function goalRun(options: {
   const progress: string[] = [];
   const notes: string[] = [];
   const briefs: GoalBrief[] = [];
+  const planSources: GoalPlanSource[] = [];
   const conflicts: GoalConflict[] = [];
   const baselines: GoalBaseline[] = [];
   let cancelled = false;
@@ -259,8 +269,10 @@ function goalRun(options: {
     progress: (detail) => progress.push(detail),
     note: (text) => notes.push(text),
     recordBrief: (brief) => briefs.push(brief),
+    ...(options.planSource ? { planSource: options.planSource } : {}),
+    recordPlanSource: (source) => planSources.push(source),
   });
-  return { done, run, calls, finished, progress, notes, briefs, conflicts, baselines };
+  return { done, run, calls, finished, progress, notes, briefs, planSources, conflicts, baselines };
 }
 
 describe("one goal-run loop for a room and a one-on-one chat", () => {
@@ -840,7 +852,7 @@ describe("team roles in a goal run", () => {
         settled(envelope({ status: "completed", detail: "Done." })),
       ] });
       await goal.done;
-      expect(goal.briefs).toEqual([brief]);
+      expect(goal.briefs).toEqual([{ ...brief, structure: WHOLE_PROJECT }]);
       expect(goal.calls[4]!.instructions).toContain("The brief this run is held to:\nGoal: Ship checkout\nIn scope:\n- cart and checkout\nOut of scope:\n- payments\nAcceptance:\n- Totals match SPEC.md\nConstraints:\n- no new dependencies");
       expect(goal.calls[4]!.instructions).not.toContain("Your first plan carries the run's brief");
       expect(goal.calls[2]!.instructions).toContain("Acceptance checks from the run's brief:\n- Totals match SPEC.md");
@@ -855,6 +867,104 @@ describe("team roles in a goal run", () => {
       await goal.done;
       expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id"]);
       expect(goal.finished).toEqual([{ status: "needs-input", detail: "Questions before work starts: 1) Which currency? 2) Is shipping free?" }]);
+    });
+
+    describe("a saved outline", () => {
+      const structure = [{ name: "frontend", paths: ["src/"], owns: "screens" }, { name: "backend", paths: ["server/"], owns: "API" }];
+      const saved = (parseGoalBrief({ ...brief, structure })!);
+      const planSource: GoalPlanSource = { source: "conversation", cardId: "card-1", draft: { brief: saved, waves: [{ name: "Build", areas: ["frontend", "backend"], deliverable: "A working checkout" }] } };
+      const work2 = [{ id: "t1", assignee: "Builder", instruction: "Add the page", writes: ["src/checkout.tsx"] }];
+
+      it("is sent to the Lead, and a first plan that follows it is recorded unchanged", async () => {
+        const goal = goalRun({ tasksAllowed: true, roles, members: team, planSource, steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work2, brief: { ...saved } })),
+          settled("Added."), settled("VERDICT: PASS"),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ] });
+        await goal.done;
+        expect(goal.calls[0]!.instructions).toContain("Saved project outline (conversation, card card-1)");
+        expect(goal.calls[0]!.instructions).toContain("1. Build [frontend, backend]: A working checkout");
+        expect(goal.planSources).toEqual([planSource]);
+        expect(goal.briefs).toEqual([saved]);
+      });
+
+      it("is adopted when the first plan sends no brief", async () => {
+        const goal = goalRun({ tasksAllowed: true, roles, members: team, planSource, steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work2, brief: null })),
+          settled("Added."), settled("VERDICT: PASS"),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ] });
+        await goal.done;
+        expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "worker-id", "tester-id", "lead-id"]);
+        expect(goal.briefs).toEqual([saved]);
+      });
+
+      it("must come with a reason when the Lead changes the brief, and the reason is kept", async () => {
+        const changed = { ...saved, goal: "Ship checkout and refunds" };
+        const goal = goalRun({ tasksAllowed: true, roles, members: team, planSource, steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work2, brief: changed })),
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work2, brief: changed, planChangeReason: "Refunds were added in chat" })),
+          settled("Added."), settled("VERDICT: PASS"),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ] });
+        await goal.done;
+        expect(goal.calls[1]!.instructions).toContain("Plan refused: the brief differs from the saved outline");
+        expect(goal.planSources).toEqual([{ ...planSource, changeReason: "Refunds were added in chat" }]);
+        expect(goal.briefs).toEqual([changed]);
+      });
+    });
+
+    describe("its structure", () => {
+      const structure = [
+        { name: "frontend", paths: ["src/"], owns: "screens" },
+        { name: "backend", paths: ["server/"], owns: "API" },
+        { name: "tests", paths: ["tests/"], owns: "contract tests", readOnly: true },
+      ];
+
+      it("is asked for once, with the reason, then the run goes on without one", async () => {
+        const goal = goalRun({ tasksAllowed: true, roles, members: team, steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work, brief: { ...brief, structure: null } })),
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work, brief: { ...brief, structure: [{ name: "a", paths: ["src"], owns: "x" }, { name: "b", paths: ["src/ui"], owns: "y" }] } })),
+          settled("Added."), settled("VERDICT: PASS"),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ] });
+        await goal.done;
+        expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "worker-id", "tester-id", "lead-id"]);
+        expect(goal.calls[0]!.instructions).toContain('"structure":[{"name":"area name"');
+        expect(goal.calls[1]!.instructions).toContain("Plan refused: the brief has no structure. The first plan's brief carries \"structure\"");
+        expect(goal.briefs).toEqual([brief]);
+        expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+      });
+
+      it("names what is wrong with a structure it cannot use", async () => {
+        const goal = goalRun({ tasksAllowed: true, roles, members: team, steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work, brief: { ...brief, structure: [{ name: "a", paths: ["src"], owns: "x" }, { name: "b", paths: ["src/ui"], owns: "y" }] } })),
+        ] });
+        await goal.done;
+        expect(goal.calls[1]!.instructions).toContain("Plan refused: areas a and b overlap at src and src/ui; give each path to one area.");
+      });
+
+      it("holds each Worker task to one writable area, then sends the structure with every task and Lead turn", async () => {
+        const across = [{ id: "t1", assignee: "Builder", instruction: "Page and API", writes: ["src/checkout.tsx", "server/orders.js"] }];
+        const intoTests = [{ id: "t1", assignee: "Builder", instruction: "Loosen the test", writes: ["tests/checkout.test.mjs"] }];
+        const goal = goalRun({ tasksAllowed: true, roles, members: team, steps: [
+          settled(envelope({ status: "continue", detail: "Plan", tasks: across, brief: { ...brief, structure } })),
+          settled(envelope({ status: "continue", detail: "Plan", tasks: intoTests })),
+          settled(envelope({ status: "continue", detail: "Plan", tasks: work })),
+          settled("Added."), settled("VERDICT: PASS"),
+          settled(envelope({ status: "completed", detail: "Done." })),
+        ] });
+        await goal.done;
+        expect(goal.calls.map((call) => call.bot)).toEqual(["lead-id", "lead-id", "lead-id", "worker-id", "tester-id", "lead-id"]);
+        expect(goal.calls[1]!.instructions).toContain("Plan refused: task t1 for Builder writes in frontend and backend; a task works in one area, so split it into one task per area.");
+        expect(goal.calls[2]!.instructions).toContain("Plan refused: task t1 for Builder writes tests/checkout.test.mjs in tests, which is read-only.");
+        const text = "Project structure (each Worker task writes inside one area; read-only areas take no writes):\n- frontend: src — screens\n- backend: server — API\n- tests (read-only): tests — contract tests";
+        expect(goal.calls[3]!.instructions).toContain(text);
+        expect(goal.calls[4]!.instructions).toContain(text);
+        expect(goal.calls[5]!.instructions).toContain(text);
+        expect(goal.briefs).toEqual([{ ...brief, structure: structure.map((area) => ({ ...area, paths: area.paths.map((path) => path.replace(/\/$/, "")) })) }]);
+        expect(goal.finished).toEqual([{ status: "completed", detail: "Done." }]);
+      });
     });
 
     it("is not asked for in a room without roles or for a single next step", async () => {
@@ -1046,7 +1156,7 @@ describe("project preparation and baseline", () => {
       tasksAllowed: true,
       members: [{ id: "lead", name: "Lead" }, { id: "worker", name: "Worker" }, { id: "tester", name: "Tester" }, { id: "reviewer", name: "Reviewer" }],
       roles: { lead: "lead", worker: "worker", tester: "tester", reviewer: "reviewer" },
-      projectProfile: { moduleMap: "src: service" },
+      projectProfile: { template: "ml", moduleMap: "src: service" },
       verify: [{ id: "build", command: "npm run build", expectExit: 2 }],
       runVerify: async (command) => ({ id: command.id, exitCode: 2, output: "ok" }),
       dispatchWave: async (batch) => batch.map((entry) => {
@@ -1058,6 +1168,14 @@ describe("project preparation and baseline", () => {
     await goal.done;
     expect(assignments).toHaveLength(3);
     expect(assignments.every((assignment) => assignment.includes("build: PASS, exit 2, expected 2") && assignment.includes("src: service"))).toBe(true);
+    for (const assignment of assignments) expect(assignment).toContain("Project template: ML training");
+    expect(assignments[0]).toContain("Worker playbook:");
+    expect(assignments[1]).toContain("Tester playbook:");
+    expect(assignments[2]).toContain("Reviewer playbook:");
+    for (const call of goal.calls) {
+      expect(call.instructions).toContain("Lead playbook:");
+      expect(call.instructions).toContain("Project template: ML training");
+    }
     expect(goal.finished[0]!.status).toBe("completed");
   });
 

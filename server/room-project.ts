@@ -1,14 +1,18 @@
 import type { RoomProjectProfile, VerifyCommand } from "../shared/wire.ts";
-import type { GoalBaseline, GoalCheckResult } from "../shared/group-goal-run.ts";
+import { checkPassed, type GoalBaseline, type GoalCheckResult } from "../shared/group-goal-run.ts";
 import { redactSecretsInText } from "../shared/redact.ts";
 import { checkedVerifyCommands } from "./verify-config.ts";
 import type { VerifyResult } from "./verify-run.ts";
+import { isProjectTemplate } from "../shared/project-template.ts";
+import { PROJECT_PLAYBOOKS } from "./playbooks/projects.ts";
+import { checkedRoomPlan } from "./room-plan.ts";
 
 export function checkedProjectProfile(raw: unknown): RoomProjectProfile {
   const fail = (message: string): never => { throw Object.assign(new Error(`projectProfile ${message}`), { status: 400 }); };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return fail("must be an object or null");
   const record = raw as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !["instructions", "moduleMap", "protectedPaths", "setup"].includes(key))) return fail("contains an unknown field");
+  if (Object.keys(record).some((key) => !["plan", "template", "instructions", "moduleMap", "protectedPaths", "setup"].includes(key))) return fail("contains an unknown field");
+  if (record.template !== undefined && !isProjectTemplate(record.template)) return fail("template must be web, ml, research or library");
   const text = (key: string): string | undefined => {
     const value = record[key];
     if (value === undefined) return undefined;
@@ -27,6 +31,8 @@ export function checkedProjectProfile(raw: unknown): RoomProjectProfile {
   }
   const instructions = text("instructions"), moduleMap = text("moduleMap");
   return {
+    ...(record.plan !== undefined ? { plan: checkedRoomPlan(record.plan) } : {}),
+    ...(isProjectTemplate(record.template) ? { template: record.template } : {}),
     ...(instructions ? { instructions } : {}), ...(moduleMap ? { moduleMap } : {}),
     ...(protectedPaths?.length ? { protectedPaths } : {}),
     ...(record.setup !== undefined ? { setup: checkedVerifyCommands(record.setup, "projectProfile setup") } : {}),
@@ -36,8 +42,6 @@ export function checkedProjectProfile(raw: unknown): RoomProjectProfile {
 export function goalCheckResult(command: VerifyCommand, result: VerifyResult): GoalCheckResult {
   return { id: redactSecretsInText(command.id), exitCode: result.exitCode, expectExit: command.expectExit ?? 0, output: redactSecretsInText(result.output).slice(-1_000) };
 }
-
-export const checkPassed = (check: GoalCheckResult): boolean => check.exitCode === check.expectExit;
 
 export async function prepareProject(profile: RoomProjectProfile, verify: readonly VerifyCommand[], deps: {
   cancelled(): boolean;
@@ -71,6 +75,7 @@ export async function prepareProject(profile: RoomProjectProfile, verify: readon
 export function projectContext(profile: RoomProjectProfile, verify: readonly VerifyCommand[], baseline: GoalBaseline): string {
   return redactSecretsInText([
     "Room project profile:",
+    ...(profile.template ? [PROJECT_PLAYBOOKS[profile.template]] : []),
     ...(profile.instructions ? [`Project conventions (also follow the repository's AGENTS.md/CLAUDE.md):\n${profile.instructions}`] : []),
     ...(profile.moduleMap ? [`Module map:\n${profile.moduleMap}`] : []),
     ...(profile.protectedPaths?.length ? [`Do not edit these project paths: ${profile.protectedPaths.join(", ")}. Ask the person if the goal requires changing them.`] : []),

@@ -34,10 +34,14 @@ import type { WebhookAttempt, WebhookTrigger } from "./webhooks.ts";
 import type { PublishedPageCard } from "./published-page.ts";
 import type { InboxItem, InboxTask } from "./inbox.ts";
 import type { LiveCallRecord, LiveCallState } from "./live-call-wire.ts";
+import type { RoomProjectProfile, VerifyCommand } from "./room-workflow.ts";
+import type { BotQueuedMessages, RoomHeldMessage, RoomHold, RoomQueueEntry } from "./room-queue.ts";
 /** What a team bot's main chat is called, beside each person's own chats. */
 export const SHARED_CHAT_TITLE = "Shared chat";
 
 export type { LiveCallRecord, LiveCallState, LiveCallStatus, LiveClient, LiveEndReason, LiveKeySource, LiveProvider, LiveSettings } from "./live-call-wire.ts";
+export type { RoomProjectProfile, VerifyCommand } from "./room-workflow.ts";
+export type { BotQueuedMessages, RoomHeldMessage, RoomHold, RoomQueueEntry, SteerQueueReason } from "./room-queue.ts";
 
 /** Reasoning-effort levels, ascending: a union of what any engine accepts;
  * each driver declares the subset its CLI will take. */
@@ -456,7 +460,7 @@ export interface WireMessage extends ServerTextLine, HelperIntroField, SetupCard
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "signin" | "routine.run" | "goal.run" | "digest" | "compaction" | "call" | "widget" | "app";
+  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "signin" | "routine.run" | "goal.run" | "room.plan" | "digest" | "compaction" | "call" | "widget" | "app";
   text?: string;
   digest?: TurnDigest;
   compaction?: {
@@ -503,6 +507,7 @@ export interface WireMessage extends ServerTextLine, HelperIntroField, SetupCard
   automation?: AutomationLine;
   /** Terminal receipt for a bounded multi-bot channel goal. */
   goalRun?: GroupGoalRunCardData;
+  roomPlan?: import("./room-plan.ts").RoomPlanCard;
   /** call rows (kind "call"): the finished Live call this row records. */
   call?: LiveCallRecord;
   /** activity messages: tool name + outcome. */
@@ -841,33 +846,6 @@ export interface GroupTask {
   busyBotId?: string | null;
 }
 
-/** A server-run room command; completion checks use real exit codes after the Tester passes.
- * A project profile also runs these checks before any bot turn to record existing failures. */
-export interface VerifyCommand {
-  /** Stable id, named in reports. */
-  id: string;
-  /** The shell command line, run in the room's working folder (or `cwd` under it). */
-  command: string;
-  /** A relative subfolder of the room's working folder; ".." and absolute paths are refused. */
-  cwd?: string;
-  /** Seconds before the command is killed; default 600. */
-  timeoutSec?: number;
-  /** The exit code that counts as passed; default 0. */
-  expectExit?: number;
-}
-
-/** Optional project context for room goals; enabling it runs setup and a verify baseline before the first bot turn. */
-export interface RoomProjectProfile {
-  /** Project conventions and references to repository instructions; at most 4000 characters. */
-  instructions?: string;
-  /** A concise map of the modules the team works on; at most 4000 characters. */
-  moduleMap?: string;
-  /** Relative files or folders the bots are instructed to leave alone; advisory, not a filesystem sandbox. */
-  protectedPaths?: string[];
-  /** Server-run setup commands before each goal's baseline; a failure blocks the goal before any bot works. */
-  setup?: VerifyCommand[];
-}
-
 /** A room as a client may see it: the record plus the computed working flag. */
 export interface WireGroup {
   /** False turns off parallel goal waves in this room; absent follows the member count (three or more). */
@@ -882,8 +860,9 @@ export interface WireGroup {
   goalFileHash?: string;
   /** Completion checks the server runs itself before a goal may finish; absent runs none. */
   verify?: VerifyCommand[];
-  /** Project context and baseline checks for goals; null in PATCH clears it. Ordinary chat is unaffected. */
-  projectProfile?: RoomProjectProfile;
+  /** Project context and baseline checks for goals; null in PATCH clears it, and null on the wire means none, so a
+   * client's shallow merge drops a stale value. Ordinary chat is unaffected. */
+  projectProfile?: RoomProjectProfile | null;
   /** Opt-in Git worktrees for role-based code goals; defaults off, including research rooms. */
   isolatedBranches?: boolean;
   /** Ignored local files copied into new goal worktrees; relative paths, never .git or symlinks. */
@@ -948,39 +927,6 @@ export interface WireGroup {
   /** transient: who waits in each of the room's threads, and on whom; absent or empty when nobody waits. */
   queue?: RoomQueueEntry[];
 }
-
-export interface RoomQueueEntry {
-  botId: string;
-  threadId: string;
-  state: "running" | "queued";
-  /** 1-based place in that thread's line; `of` counts the whole line. */
-  position: number;
-  of: number;
-  /** Who a queued member waits on: the member running now, else the one speaking (or the one ahead). */
-  waitingForBotId?: string;
-  assignmentId?: string;
-}
-
-/** One member's hold in a room: when the person stopped it, and whether the
- * room has already said so (the held line is written once per hold). */
-export interface RoomHold {
-  at: number;
-  noted?: boolean;
-}
-
-/** A room message that reached a member while it was held. */
-export interface RoomHeldMessage {
-  threadId: string;
-  messageId: string;
-}
-
-/** Why a steer-queue entry waits: a shared thread slot, or the bot's room
- * turn (which runs one at a time per bot). */
-export type SteerQueueReason = "capacity" | "group-turn";
-
-/** Pending steer-queue chips, as `queuedSteerSnapshot` emits them and the
- * `bot.queued` frame carries them: threadId → queued items. */
-export type BotQueuedMessages = Record<string, Array<{ queueId: string; text: string; reason?: SteerQueueReason; /** The reason in plain words, shown as it is. */ why?: string }>>;
 
 /** Skills library browse surface: one row per library entry, with the bots
  * currently assigned to it. Version is null for locally imported skills. */

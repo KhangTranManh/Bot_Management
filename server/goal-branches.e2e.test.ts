@@ -47,7 +47,7 @@ it("runs isolated Workers, verifies integration, repairs conflicts, restores ret
     expect((await api("PATCH", `/api/groups/${room.id}`, { cwd: repo, kind: "code", isolatedBranches: true, branchFiles: [".env.local"], roles: { [lead.id]: "lead", [a.id]: "worker", [b.id]: "worker", [tester.id]: "tester", [reviewer.id]: "reviewer" }, verify: [{ id: "checks", command: "node check.cjs" }] })).status).toBe(200);
     const finish = join(dataDir, `${name}-finish`), readyA = join(dataDir, `${name}-a-ready`), readyB = join(dataDir, `${name}-b-ready`);
     const goal = `Build ${name}`;
-    plans[lead.id] = { turns: [{ reply: envelope({ status: "continue", brief: { goal, acceptance: ["checks pass"] }, tasks: [{ id: "a", assignee: a.id, instruction: "Implement a", writes: ["a.txt"] }, { id: "b", assignee: b.id, instruction: "Implement b", writes: options.testerFail ? ["a.txt", "b.txt"] : [conflict ? "a.txt" : "b.txt"] }] }) }, { reply: envelope({ status: "completed", detail: "Integrated and checked" }) }] };
+    plans[lead.id] = { turns: [{ reply: envelope({ status: "continue", brief: { goal, acceptance: ["checks pass"], structure: [{ name: "project", paths: ["."], owns: "the project" }] }, tasks: [{ id: "a", assignee: a.id, instruction: "Implement a", writes: ["a.txt"] }, { id: "b", assignee: b.id, instruction: "Implement b", writes: options.testerFail ? ["a.txt", "b.txt"] : [conflict ? "a.txt" : "b.txt"] }] }) }, { reply: envelope({ status: "completed", detail: "Integrated and checked" }) }] };
     plans[a.id] = { writeFiles: { "a.txt": "worker a\n" }, readyFile: readyA, gateFile: finish, reply: "Built a." };
     if (options.testerFail) {
       plans[a.id] = { ...plans[a.id] as object, byPrompt: [{ promptIncludes: "Fix a after test", plan: { writeFiles: { "a.txt": "worker a fixed\n" }, reply: "Fixed a." } }] };
@@ -144,7 +144,7 @@ it("runs isolated Workers, verifies integration, repairs conflicts, restores ret
     await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).body.groups.find((group: WireGroup) => group.id === stopped.room.id)?.working, { timeout: 15_000 }).toBe(false);
     const [resumeLead, , , resumeTester, resumeReviewer] = stopped.bots as [WireBot, WireBot, WireBot, WireBot, WireBot];
     const first = (plans[resumeLead.id] as any).turns[0];
-    plans[resumeLead.id] = { turns: [first, { reply: envelope({ status: "continue", brief: { goal: stopped.goal }, tasks: [{ id: "test-retained", assignee: resumeTester.id, instruction: "Test retained integration" }, { id: "review-retained", assignee: resumeReviewer.id, instruction: "Review retained integration" }] }) }, { reply: envelope({ status: "completed", detail: "Retained work checked" }) }] };
+    plans[resumeLead.id] = { turns: [first, { reply: envelope({ status: "continue", brief: { goal: stopped.goal, structure: [{ name: "project", paths: ["."], owns: "the project" }] }, tasks: [{ id: "test-retained", assignee: resumeTester.id, instruction: "Test retained integration" }, { id: "review-retained", assignee: resumeReviewer.id, instruction: "Review retained integration" }] }) }, { reply: envelope({ status: "completed", detail: "Retained work checked" }) }] };
     plans[resumeTester.id] = { reply: "VERDICT: PASS" };
     writeFileSync(planPath, JSON.stringify(plans));
     expect((await api("POST", `/api/groups/${stopped.room.id}/messages`, { text: stopped.goal, mode: "goal" })).status).toBe(202);

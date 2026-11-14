@@ -51,6 +51,7 @@ function goalChat(startTurn: (call: number, lead: GoalLeadTurn, settle: (outcome
       start: () => run,
       progress: () => {},
       brief: () => {},
+      planSource: () => {},
       conflict: () => {},
       baseline: () => {},
       branches: () => {},

@@ -85,6 +85,8 @@ Use only mapped, tested commands:
 - [In-chat team coordination](room-coordination.md)
 - [Room project profiles and the pre-goal baseline](room-project.md)
 - [Isolated goal branches, conflict repair and explicit decisions](goal-branches.md)
+- [Goal brief, baseline and conflicts on the card; the project profile editor](goal-record.md)
+- [Room outline: `/plan`, the outline card, goals that start from it](room-plan.md)
 - [Question cards: a teammate's question, in its chat and the person's inbox](question-cards.md)
 - [Chief authority over additional departments](team-access.md)
 - [Engines and Doctor](engines.md)

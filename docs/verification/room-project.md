@@ -10,6 +10,9 @@ The end-to-end check uses `launchVerificationServer` with a temporary home,
 data directory and fake engine. It saves a project profile through the real
 room API and checks both the wire response and `groups.json`. Invalid profiles
 are refused before changing the saved configuration.
+The profile includes a `web` template: the check confirms it survives the API
+and disk round trip and reaches the fake engine as Web full-stack guidance.
+An unknown template is rejected without changing the saved profile.
 
 Its setup and verify commands execute real Node scripts in the disposable
 project folder. The first verify call deliberately fails; the synthetic script
@@ -43,6 +46,7 @@ fixture. Supply a working folder in that fixture, and use the room's existing
 ```json
 {
   "projectProfile": {
+    "template": "web",
     "instructions": "Follow AGENTS.md and CLAUDE.md. Keep changes readable and test changed behaviour.",
     "moduleMap": "src/api: HTTP routes; src/domain: inventory rules; tests: integration checks.",
     "protectedPaths": ["vendor/", "db/migrations/"],
@@ -69,6 +73,19 @@ working folder also blocks. Ordinary room chat does not run these commands.
 behaviour. A profile without verify commands explicitly reports its baseline
 as unverified.
 
+The optional `template` accepts `web`, `ml`, `research`, or `library`. It adds
+planning guidance for areas, dependencies and verification to every goal turn
+and task with the profile. It does not create files, set the brief's structure,
+or add executable verify commands. Omit it to clear the selection while keeping
+the other profile fields. The room panel offers the same four choices.
+
+Rooms with team roles receive the built-in Lead, Worker, Tester and Reviewer
+playbooks from `server/playbooks/roles.ts`. They cover area ownership, readable
+code, acceptance checks and the existing report formats. Evaluator instructions
+and research approval rules remain separate. These are model instructions;
+server role, structure, vendor and completion checks still enforce their own
+contracts. Fake-engine checks prove delivery, not a real model's compliance.
+
 The goal card's `baseline` holds timestamps, setup results and verify results,
 including the command id, actual exit code (`null` for a killed or unavailable
 command), expected exit code, and at most 1000 characters of redacted output.
@@ -79,6 +96,7 @@ does not waive the final completion checks.
 
 Protected paths and conventions are instructions to the bots, not filesystem
 enforcement. The server does not read the referenced instruction files into
-the profile or automatically discover build/test commands. The profile and
-baseline have no dedicated renderer controls yet. Checks remain one shared
+the profile or automatically discover build/test commands. The room panel
+edits the profile and the goal panel shows the baseline; see
+[goal-record.md](goal-record.md). Checks remain one shared
 verify list; separate focused-per-round and full-final lists are not implemented.

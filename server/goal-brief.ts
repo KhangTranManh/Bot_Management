@@ -1,4 +1,5 @@
 import type { GoalBrief } from "../shared/group-goal-run.ts";
+import { goalStructureText, parseGoalStructure } from "./goal-structure.ts";
 
 const bounded = (value: unknown, max: number): string => typeof value === "string" ? value.trim().slice(0, max) : "";
 
@@ -18,7 +19,15 @@ export function parseGoalBrief(raw: unknown): GoalBrief | undefined {
   const inScope = list(record.inScope), outOfScope = list(record.outOfScope), acceptance = list(record.acceptance);
   const constraints = list(record.constraints), openQuestions = list(record.openQuestions);
   if (!goal || !inScope || !outOfScope || !acceptance || !constraints || !openQuestions) return undefined;
-  return { goal, inScope, outOfScope, acceptance, constraints, openQuestions };
+  const structure = parseGoalStructure(record.structure);
+  return { goal, inScope, outOfScope, acceptance, constraints, openQuestions, ...("areas" in structure ? { structure: structure.areas } : {}) };
+}
+
+/** Why a brief came without a usable structure, for the Lead to correct. */
+export function goalBriefStructureProblem(raw: unknown): string | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const structure = parseGoalStructure((raw as Record<string, unknown>).structure);
+  return "problem" in structure ? structure.problem : undefined;
 }
 
 export function goalBriefText(brief: GoalBrief): string {
@@ -29,6 +38,7 @@ export function goalBriefText(brief: GoalBrief): string {
     ...section("Out of scope", brief.outOfScope),
     ...section("Acceptance", brief.acceptance),
     ...section("Constraints", brief.constraints),
+    ...(brief.structure ? [goalStructureText(brief.structure)] : []),
   ].join("\n");
 }
 

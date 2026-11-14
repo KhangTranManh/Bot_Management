@@ -41,7 +41,7 @@ try {
   const room = (await api("POST", "/api/groups", { name: "Branch inventory", memberIds: bots.map((bot: any) => bot.id), setup: { bulletin: "", defaultResponder: { kind: "member", botId: lead.id } } })).group;
   await api("PATCH", `/api/groups/${room.id}`, { kind: "code", cwd: repo, verify: [{ id: "inventory", command: "node check.cjs" }], roles: { [lead.id]: "lead", [worker.id]: "worker", [tester.id]: "tester", [reviewer.id]: "reviewer" } });
   writeFileSync(join(fixture.info.dataDir, "room-plan.json"), JSON.stringify({
-    [lead.id]: { turns: [{ reply: envelope({ status: "continue", brief: { goal: "Build checked inventory", acceptance: ["inventory check passes"] }, tasks: [{ id: "inventory", assignee: worker.id, instruction: "Build inventory", writes: ["inventory.txt"] }] }) }, { reply: envelope({ status: "completed", detail: "Built, tested and reviewed" }) }] },
+    [lead.id]: { turns: [{ reply: envelope({ status: "continue", brief: { goal: "Build checked inventory", acceptance: ["inventory check passes"], structure: [{ name: "project", paths: ["."], owns: "the project" }] }, tasks: [{ id: "inventory", assignee: worker.id, instruction: "Build inventory", writes: ["inventory.txt"] }] }) }, { reply: envelope({ status: "completed", detail: "Built, tested and reviewed" }) }] },
     [worker.id]: { writeFiles: { "inventory.txt": "checked inventory\n" }, reply: "Inventory built." },
     [tester.id]: { reply: "VERDICT: PASS" }, [reviewer.id]: { reply: "REVIEW: CLEAR" },
   }));

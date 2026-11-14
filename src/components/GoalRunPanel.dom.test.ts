@@ -52,6 +52,32 @@ describe("GoalRunPanel", () => {
     expect(panel.textContent).not.toContain("older line");
   });
 
+  it("shows the brief, the baseline and the conflicts the run carries", () => {
+    const recorded = row("card", { kind: "goal.run", goalRun: {
+      ...card.goalRun!, status: "needs-input",
+      brief: { goal: "Ship checkout", inScope: ["cart"], outOfScope: ["payments"], acceptance: ["POST /orders returns 201"], constraints: [], openQuestions: ["Which currency?"],
+        structure: [{ name: "frontend", paths: ["web/src"], owns: "screens" }, { name: "tests", paths: ["tests"], owns: "contract tests", readOnly: true }] },
+      baseline: { startedAt: 1, finishedAt: 2, setup: [{ id: "install", exitCode: 0, expectExit: 0, output: "" }], checks: [{ id: "tests", exitCode: 1, expectExit: 0, output: "1 failing" }] },
+      conflicts: [{ file: "src/cart.js", ownerTask: "t1", ownerBotId: "worker", ownerName: "Worker", otherTask: "t2", otherBotId: "lead", otherName: "Lead", steered: false, at: 3 }],
+    } });
+    flushSync(() => root.render(createElement(GoalRunPanel, { group: room([recorded]), cardId: "card", onClose: vi.fn() })));
+    const panel = document.querySelector("[data-goal-run-panel]")!;
+    expect(panel.querySelector('[data-goal-brief-list="Câu hỏi mở"]')?.textContent).toContain("Which currency?");
+    expect(panel.querySelector("[data-goal-brief]")?.textContent).toContain("POST /orders returns 201");
+    expect(panel.querySelector('[data-goal-brief-list="Ràng buộc"]')).toBeNull();
+    expect([...panel.querySelectorAll("[data-goal-area]")].map((el) => [el.getAttribute("data-goal-area"), el.getAttribute("data-read-only"), el.querySelector("code")?.textContent]))
+      .toEqual([["frontend", "false", "web/src"], ["tests", "true", "tests"]]);
+    expect(panel.querySelector('[data-goal-area="tests"]')?.textContent).toContain("chỉ đọc");
+    expect(panel.querySelector("[data-goal-baseline]")?.textContent).toContain("1/2 lệnh đạt");
+    expect(panel.querySelector('[data-goal-check="tests"]')?.getAttribute("data-passed")).toBe("false");
+    expect(panel.querySelector('[data-goal-conflict="src/cart.js"]')?.textContent).toContain("Lead (t2) sửa file của Worker (t1)");
+  });
+
+  it("shows no record section for a run without one", () => {
+    flushSync(() => root.render(createElement(GoalRunPanel, { group: room([card]), cardId: "card", onClose: vi.fn() })));
+    expect(document.querySelector(".goal-run-record")).toBeNull();
+  });
+
   it("closes on Escape", () => {
     const onClose = vi.fn();
     flushSync(() => root.render(createElement(GoalRunPanel, { group: room([card]), cardId: "card", onClose })));

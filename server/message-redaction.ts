@@ -1,4 +1,5 @@
 import { redactParams, redactSecretsInText } from "./redact.ts";
+import { safeRoomPlan } from "./room-plan.ts";
 import { scrubbedSkillRequest } from "./skill-request-card.ts";
 import type { ProfileRequestChanges } from "../shared/profile-request.ts";
 import type { OptionCardData, WireMessage } from "../shared/wire.ts";
@@ -34,6 +35,15 @@ export function redactBotAuthored<T extends Omit<WireMessage, "id" | "at"> & { a
       coordinatorName: redactSecretsInText(out.goalRun.coordinatorName),
       detail: out.goalRun.detail ? redactSecretsInText(out.goalRun.detail) : undefined,
       ...(out.goalRun.detailParams ? { detailParams: redactParams(out.goalRun.detailParams) } : {}),
+    };
+  }
+  if (out.roomPlan) {
+    out.roomPlan = {
+      ...out.roomPlan,
+      request: redactSecretsInText(out.roomPlan.request),
+      coordinatorName: redactSecretsInText(out.roomPlan.coordinatorName),
+      ...(out.roomPlan.detail ? { detail: redactSecretsInText(out.roomPlan.detail) } : {}),
+      ...(out.roomPlan.draft ? { draft: safeRoomPlan(out.roomPlan.draft) } : {}),
     };
   }
   if (out.call?.title) out.call = { ...out.call, title: redactSecretsInText(out.call.title) };

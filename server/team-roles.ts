@@ -2,6 +2,7 @@ import type { TeamRole } from "../shared/team-roles.ts";
 import type { LeadTaskPlan } from "./lead-schedule.ts";
 import { UNKNOWN_VENDOR } from "./model-vendor.ts";
 import { pathDeclared } from "./writes-audit.ts";
+import { rolePlaybook } from "./playbooks/roles.ts";
 
 /** A Tester's reply ends with this line; the last one counts. */
 const VERDICT = /VERDICT:\s*(PASS|FAIL)\b/gi;
@@ -172,16 +173,6 @@ export function withReviewTask(plan: readonly LeadTaskPlan[], roleOf: AssigneeRo
 
 /** What each role is told on top of its assignment. */
 export function teamRoleRule(role: TeamRole | undefined): string | undefined {
-  if (role === "tester") {
-    return "You are this room's Tester: change no source files. Run the checks and write each failure on its own line as FAIL: <file or test> — <error>. " +
-      "End your reply with exactly one line: VERDICT: PASS or VERDICT: FAIL.";
-  }
-  if (role === "reviewer") {
-    return "You are this room's Reviewer: read and review only, change no files. Write each problem on its own line as FINDING: <block|fix|note> <task id> <file>:<line> — <problem>. " +
-      "block is wrong behaviour, data loss, a security hole or a broken project rule; fix should change but meets the request; note is a remark. " +
-      "End your reply with exactly one line: REVIEW: CLEAR when nothing is block, otherwise REVIEW: BLOCK <number of block findings>.";
-  }
   if (role === "evaluator") return "You are this room's Evaluator: run only the evaluation steps the assignment and the goal file name, quote results as file references, and change no source files.";
-  if (role === "worker") return "You are a Worker: change only the files your assignment lists, and say exactly what you changed.";
-  return undefined;
+  return rolePlaybook(role);
 }

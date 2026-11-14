@@ -11,10 +11,15 @@ import { TEAM_MAX_FIX_ROUNDS, owningTask, reviewReport, teamPlanProblem, teamRol
 import { engineFailureKind } from "./drivers/engine-errors.ts";
 import { metricMeetsThreshold, researchBudgetExceeded, researchStopReason, type MetricReading } from "./research-goal.ts";
 import { prepareProject } from "./room-project.ts";
-import { goalBriefText, parseGoalBrief } from "./goal-brief.ts";
+import { goalBriefStructureProblem, parseGoalBrief } from "./goal-brief.ts";
+import { changedPlanBrief, goalPlanContext } from "./room-plan.ts";
+import type { GoalPlanSource } from "../shared/room-plan.ts";
+import { goalStructureText, structureTaskProblem } from "./goal-structure.ts";
 import { watchWaveConflicts } from "./goal-conflicts.ts";
 import { dispatchWaveBatch } from "./goal-wave-dispatch.ts";
 import type { GoalBranchDispatch } from "./goal-branch-workflow.ts";
+import { groupGoalCoordinatorInstructions, groupGoalWorkerInstructions } from "./goal-instructions.ts";
+export { groupGoalCoordinatorInstructions, groupGoalWorkerInstructions } from "./goal-instructions.ts";
 export { goalBriefText, parseGoalBrief } from "./goal-brief.ts";
 
 export interface ResearchRunRules {
@@ -42,7 +47,7 @@ export const GROUP_GOAL_CONTROL_CLOSE = "</openmaus-goal>";
 
 export type GroupGoalDecision =
   | { status: "continue"; next: string; instruction: string; detail?: string; brief?: GoalBrief }
-  | { status: "continue"; tasks: LeadTaskPlan[]; detail?: string; brief?: GoalBrief }
+  | { status: "continue"; tasks: LeadTaskPlan[]; detail?: string; brief?: GoalBrief; structureProblem?: string; planChangeReason?: string }
   | { status: "completed" | "needs-input" | "blocked"; detail: string };
 
 export interface GoalRunMember {
@@ -146,7 +151,9 @@ export function parseGroupGoalDecision(text: string, opts?: { tasksAllowed?: boo
       if (opts?.tasksAllowed && raw.tasks !== undefined) {
         const tasks = parseGoalTasks(raw.tasks);
         if (!tasks) return { visibleText, decision: null };
-        return { visibleText, decision: { status, tasks, ...extra } };
+        const structureProblem = brief && !brief.structure ? goalBriefStructureProblem(raw.brief) : undefined;
+        const planChangeReason = bounded(raw.planChangeReason, 400);
+        return { visibleText, decision: { status, tasks, ...extra, ...(structureProblem ? { structureProblem } : {}), ...(planChangeReason ? { planChangeReason } : {}) } };
       }
       const next = bounded(raw.next, 100);
       const instruction = bounded(raw.instruction, 2_000);
@@ -186,84 +193,6 @@ export function resolveGroupGoalMember(reference: string, members: GoalRunMember
   return nameMatches.length === 1 ? nameMatches[0]! : null;
 }
 
-/** `solo` is a room of one: the lead does the work in its own turns, and "continue" names itself for its next turn. */
-export function groupGoalCoordinatorInstructions(args: {
-  goal: string;
-  members: GoalRunMember[];
-  turn: number;
-  maxTurns: number;
-  remainingTurns: number;
-  note?: string;
-  solo?: boolean;
-  tasksAllowed?: boolean;
-  roles?: Readonly<Record<string, TeamRole>>;
-  /** The run's brief once the Lead wrote it; absent before then, or when the run has no team roles. */
-  brief?: GoalBrief;
-  projectContext?: string;
-}): string {
-  const active = args.members.filter((member) => !member.hidden);
-  const roster = active
-    .map((member) => `${member.name} (${member.id})${member.title ? ` — ${member.title}` : ""}${args.roles?.[member.id] ? ` [team role: ${args.roles[member.id]}]` : ""}`)
-    .join("; ");
-  const self = args.solo ? active[0] : undefined;
-  return [
-    self ? "You are working alone toward a bounded goal." : "You are the lead coordinator for a bounded team goal run.",
-    `Goal: ${args.goal}`,
-    ...(args.projectContext ? [args.projectContext] : []),
-    ...(self ? [] : [`Available room members: ${roster}.`]),
-    `This is ${self ? "" : "team "}turn ${args.turn} of ${args.maxTurns}; ${args.remainingTurns} turn(s) remain after this one.`,
-    ...(args.note ? [`Harness note: ${args.note}`] : []),
-    self
-      ? "Use the conversation as the progress ledger. Do the next concrete piece of work now, then decide whether the goal is genuinely complete, needs the human, is blocked, or needs another turn."
-      : "Use the conversation as the progress ledger. Decide whether the goal is genuinely complete, needs the human, is blocked, or needs one named teammate next.",
-    "Do not continue merely to generate discussion. Do not claim completion unless the requested deliverable or answer is present in the conversation.",
-    "Write a brief human-facing update or final answer, then end with exactly one private control envelope on its own line.",
-    ...(args.roles && args.tasksAllowed && !self ? [] : [self
-      ? `${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","next":"${self.id}","instruction":"Your next step","detail":"Short progress note"}${GROUP_GOAL_CONTROL_CLOSE}`
-      : `${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","next":"Exact member id from the roster","instruction":"Concrete next assignment","detail":"Short progress note"}${GROUP_GOAL_CONTROL_CLOSE}`]),
-    `Or use status "completed", "needs-input", or "blocked" with a non-empty "detail" and omit next/instruction.`,
-    ...(args.tasksAllowed && !self ? [
-      `When several pieces of work can move at the same time, first give each teammate you will use a role for this goal — one short line per teammate in your human-facing update (for example: "Scout — Researcher", "Miso — Implementer", "Quill — Reviewer") — then end with a plan envelope instead: ${GROUP_GOAL_CONTROL_OPEN}{"status":"continue","detail":"Short progress note","tasks":[{"id":"t1","assignee":"Exact member id from the roster","role":"Implementer","instruction":"Concrete assignment for that role","writes":["shared artifact it changes"],"dependsOn":[]}]}${GROUP_GOAL_CONTROL_CLOSE}`,
-      "Plan rules: 1-8 tasks with unique ids; each task goes to an active roster member whose listed profile fits it, and its role field names that role — extend each teammate's own role, never contradict it; dependsOn lists ids from this plan only; declare reads/writes/locks when tasks share artifacts or a lock, omit them when independent — the scheduler already runs overlapping tasks in turn. Never re-dispatch work the ledger already shows as done: evaluate results first.",
-    ] : []),
-    ...(args.roles && !self ? [
-      ...(args.tasksAllowed ? ["For implementation, use a tasks plan rather than next/instruction. Split independent files or modules among available Workers in the SAME plan, with explicit non-overlapping writes and no dependencies between independent tasks. Use dependsOn only for real data or implementation dependencies; keep coupled edits with one owner. Include Worker tasks followed by Tester and Reviewer tasks depending on the changed work, so the scheduler can run the checks together without another Lead turn. If only one Worker is needed, still use a one-Worker plan. Do not schedule a baseline Tester run unless the goal specifically needs one."] : []),
-      "Team roles are fixed for this room: you are the Lead and do no task yourself; implementation goes only to members with team role worker, and every worker task lists its writes; testing goes to the tester, review to the reviewer.",
-      "The goal is complete only after the tester has passed the latest changes; when the tester reports failures, give each fix to the worker who owns that file.",
-      ...(Object.values(args.roles).includes("reviewer")
-        ? ["A Reviewer's block findings are fixed through the worker who owns them, or set aside with a stated reason, before completing; fix and note findings are yours to weigh."]
-        : []),
-      ...(args.tasksAllowed ? [args.brief
-        ? `The brief this run is held to:\n${goalBriefText(args.brief)}`
-        : `Your first plan carries the run's brief, drawn from the goal and the conversation before it, as a "brief" field in the plan envelope: {"goal":"one sentence","inScope":["…"],"outOfScope":["…"],"acceptance":["observable checks the Tester and Reviewer verify"],"constraints":["…"],"openQuestions":[]}. List openQuestions only when the person must answer before any work can start; then the run stops for them.`] : []),
-    ] : []),
-    "Never mention, quote, or explain the control envelope in your human-facing text.",
-  ].join("\n");
-}
-
-export function groupGoalWorkerInstructions(args: {
-  goal: string;
-  coordinatorName: string;
-  role?: string;
-  assignment: string;
-  turn: number;
-  maxTurns: number;
-  teamRule?: string;
-  projectContext?: string;
-}): string {
-  return [
-    `You are a specialist contributing to a bounded team goal run led by ${args.coordinatorName}.`,
-    `Goal: ${args.goal}`,
-    ...(args.projectContext ? [args.projectContext] : []),
-    ...(args.role ? [`Your role on this run: ${args.role}. Work within that role; hand off anything else back to ${args.coordinatorName}.`] : []),
-    ...(args.teamRule ? [args.teamRule] : []),
-    `Your assignment: ${args.assignment}`,
-    `This is team turn ${args.turn} of ${args.maxTurns}.`,
-    "Do the assigned work now and put concrete results, evidence, or a clear blocker in your reply.",
-    "Keep the handoff concise: list changed file paths, checks and outcomes, and unresolved findings. Refer to files for long artifacts; do not paste whole files or successful tool logs into the room. Include enough error detail for the next person to fix failures.",
-    `Address your result to ${args.coordinatorName}. Do not invent a new orchestration protocol or emit an openmaus-goal control envelope.`,
-  ].join("\n");
-}
 
 export function groupGoalAssignmentKey(memberId: string, instruction: string): string {
   return `${memberId}:${instruction.trim().toLocaleLowerCase().replace(/\s+/g, " ")}`;
@@ -339,6 +268,10 @@ export interface GoalRunDeps<Bot extends GoalRunMember> {
   step(bot: Bot, coordinator: boolean, instructions: string, lane?: { threadId: string; brief: string }): Promise<GoalStepResult>;
   /** Keeps the brief on the run's card once the Lead wrote it. */
   recordBrief?(brief: GoalBrief): void;
+  /** The saved outline this run starts from; the first plan follows it or states why it differs. */
+  planSource?: GoalPlanSource;
+  /** Keeps the outline the run used, and the Lead's reason for changing it, on the run's card. */
+  recordPlanSource?(source: GoalPlanSource): void;
   /** Files a member's own edit tool calls in this run's lanes named since `sinceMs`; undefined turns the conflict watch off. */
   laneEdits?(botId: string, sinceMs: number): Promise<string[]>;
   /** Delivers words into the member's running lane turn; false when its engine cannot take them mid-turn. */
@@ -396,7 +329,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   const tester = roles ? goalMembers.find((member) => !member.hidden && roles[member.id] === "tester") : undefined;
   const reviewer = roles ? goalMembers.find((member) => !member.hidden && roles[member.id] === "reviewer") : undefined;
   let unreviewed = Boolean(deps.branchWork?.hasChanges());
-  const team = { untested: false, fixRounds: 0, planRefusals: 0, earlyCompletions: 0, verdictAsked: false, reviewLineAsked: false, blocksAsked: false, briefAsked: false };
+  const team = { untested: false, fixRounds: 0, planRefusals: 0, earlyCompletions: 0, verdictAsked: false, reviewLineAsked: false, blocksAsked: false, briefAsked: false, structureAsked: false, planReasonAsked: false };
   team.untested = Boolean(deps.branchWork?.hasChanges());
   const briefWanted = Boolean(roles && tasksAllowed && !deps.solo);
   let brief: GoalBrief | undefined;
@@ -494,6 +427,8 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
   }
   const startedWall = Date.now();
   let project: string | undefined;
+  /** What every task is told about the project: the profile and baseline, then the Lead's structure once there is one. */
+  const taskContext = () => [project, brief?.structure ? goalStructureText(brief.structure) : undefined].filter(Boolean).join("\n\n") || undefined;
   if (deps.projectProfile) {
     if (deps.projectRefusal) {
       deps.finish("blocked", deps.projectRefusal);
@@ -526,6 +461,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       remainingTurns: run.maxTurns - coordinatorTurn,
       note,
       projectContext: project,
+      ...(deps.planSource ? { planContext: goalPlanContext(deps.planSource) } : {}),
       solo: deps.solo,
       tasksAllowed,
       ...(roles ? { roles } : {}),
@@ -568,9 +504,22 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
     const branchProblem = decision.status === "completed" ? await deps.branchWork?.pendingProblem() : undefined;
     if (branchProblem) { deps.finish("needs-input", branchProblem); return; }
     if (decision.status === "continue" && "tasks" in decision && briefWanted && !brief) {
-      if (decision.brief) {
-        brief = decision.brief;
+      if (decision.brief && !decision.brief.structure && !team.structureAsked) {
+        team.structureAsked = true;
+        coordinatorNote = `Plan refused: ${decision.structureProblem ?? "the brief has no structure"}. The first plan's brief carries "structure": the project's areas, each with name, paths and owns, sharing no path; mark contract tests or held-out data readOnly. Send the plan again with it.`;
+        continue;
+      }
+      const planned = deps.planSource;
+      if (planned && decision.brief && changedPlanBrief(planned.draft.brief, decision.brief) && !decision.planChangeReason && !team.planReasonAsked) {
+        team.planReasonAsked = true;
+        coordinatorNote = "Plan refused: the brief differs from the saved outline. Send the plan again with the outline's brief, or add a non-empty planChangeReason to the envelope saying why it changed.";
+        continue;
+      }
+      const submitted = decision.brief ?? planned?.draft.brief;
+      if (submitted) {
+        brief = submitted;
         deps.recordBrief?.(brief);
+        if (planned) deps.recordPlanSource?.({ ...planned, ...(decision.brief && changedPlanBrief(planned.draft.brief, decision.brief) && decision.planChangeReason ? { changeReason: decision.planChangeReason } : {}) });
         if (brief.openQuestions.length) {
           deps.finish("needs-input", `Questions before work starts: ${brief.openQuestions.map((question, n) => `${n + 1}) ${question}`).join(" ")}`);
           return;
@@ -688,6 +637,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
         ?? (outTask
           ? `task ${outTask.plan.id} goes to ${outTask.bot.name}, whose AI ran out of usage in this run`
           : roles ? teamPlanProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf)
+            ?? (brief?.structure ? structureTaskProblem(planned.map(({ plan, bot }) => ({ plan, name: bot.name, worker: roleOf(bot.id) === "worker" })), brief.structure) : undefined)
             ?? (deps.vendorOf ? teamVendorProblem(planned.map(({ plan, bot }) => ({ plan, botId: bot.id, name: bot.name })), roleOf, deps.vendorOf,
               [...workersSeen].map(([botId, name]) => ({ botId, name }))) : undefined)
           : undefined);
@@ -752,7 +702,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
               turn: run.turnCount + 1,
               maxTurns: run.maxTurns,
               teamRule: teamRoleRule(roleOf(entry.bot.id)),
-              projectContext: project,
+              projectContext: taskContext(),
             }), lane ? { threadId: lane.threadId, brief: entry.plan.role ? `${entry.plan.role}: ${entry.plan.instruction}` : entry.plan.instruction } : undefined);
             return step.then((result) => ({ entry, result }));
           };
@@ -763,7 +713,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
           const writesBefore = !deps.branchWork && deps.snapshotWrites && !deps.solo ? await deps.snapshotWrites() : undefined;
           const batchStarted = Date.now();
           const dispatched = deps.dispatchWave && !deps.solo
-            ? dispatchWaveBatch(deps, entries, project)
+            ? dispatchWaveBatch(deps, entries, taskContext())
             : lanes.every((lane) => lane)
               ? Promise.all(entries.map((entry, index) => runTask(entry, lanes[index])))
               : (async () => {
@@ -921,7 +871,7 @@ export async function runGoalRun<Bot extends GoalRunMember>(deps: GoalRunDeps<Bo
       turn: workerTurn,
       maxTurns: run.maxTurns,
       teamRule: teamRoleRule(roleOf(workerBot.id)),
-      projectContext: project,
+      projectContext: taskContext(),
     }));
     if (deps.cancelled()) return;
     if (outOfUsage(workerResult)) {

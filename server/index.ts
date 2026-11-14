@@ -7,8 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, realpathSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { readFile, rm as removeDirectory } from "node:fs/promises";
-import { editedPaths } from "./edit-events.ts";
+import { rm as removeDirectory } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
 import { basename, join } from "node:path";
@@ -78,7 +77,7 @@ import { createImageSettingsRoutes } from "./routes/image-settings.ts";
 import { fitsOnOneLine, parseBotProfilePatch } from "./bot-profile.ts";
 import { routeDirectTurn } from "./turn-route.ts"; import { QuickModelFallback } from "./quick-model-fallback.ts"; import { COMPUTER_JOURNAL_PATH, createSavedSteps, personRequest, savedStepsEnabled } from "./saved-steps/saved-steps.ts";
 import { groupTurnCwd } from "./room-cwd.ts";
-import { RoomTurnDeadline, RoomTurnStallRegistry, effectiveRoomTurnTimeoutMinutes, parseConversationTurnTimeout, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
+import { RoomTurnDeadline, RoomTurnStallRegistry, effectiveRoomTurnTimeoutMinutes, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
 import { roomTurnEnd, type RoomClaimEnd } from "./room-turn-end.ts";
 import { applyHoldDirective, classifyHoldDirective, heldMemberLine, rememberHeldMessage, stopWordPlacement } from "./room-holds.ts";
 import { refusalBody, userError, userErrorFields, userErrorThrown } from "./user-errors.ts";
@@ -226,29 +225,22 @@ import {
   GROUP_GOAL_WAIT_MAX_MS,
   groupGoalCompletionTurnId,
   parseGroupGoalDecision,
-  runGoalRun,
   selectGroupGoalCoordinator,
-  type GoalStepOutcome,
 } from "./group-goal-run.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
-import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
-import { goalWavesEnabled } from "./lead-cap.ts";
-import { writesOutside, writesSnapshot } from "./writes-audit.ts";
-import { runVerifyCommand } from "./verify-run.ts";
-import { createGoalBranchRuns } from "./host/goal-branch-runs.ts";
+import { createGoalOperations } from "./host/goal-operations.ts";
+import { createRoomPlans } from "./host/room-plans.ts";
+import { latestRoomPlan, profileOutlineContext } from "./room-plan.ts";
+import { planTextFromMessage } from "../shared/room-plan.ts";
+import { createChannelUpdate } from "./host/channel-update.ts";
+import type { GroupMemberBotAvailability, GroupMemberBotWaitResult, GroupMemberTurnOutcome, GroupTurnOperation, GroupTurnOrchestration } from "./host/group-turn-types.ts";
+import { createGoalCards } from "./host/goal-cards.ts";
 import { createGoalBranchRoutes } from "./routes/goal-branches.ts";
-import { branchPaths } from "./goal-branches.ts";
-import { createGoalBranchWorkflow, GoalBranchWorkflowError } from "./goal-branch-workflow.ts";
-import { checkedVerifyCommands } from "./verify-config.ts";
-import { checkedProjectProfile } from "./room-project.ts";
-import { modelVendor } from "./model-vendor.ts";
-import { loadResearchGoal } from "./research-goal.ts";
-import { prepareResearchRun } from "./research-run.ts";
 import { roomNow } from "./room-now.ts";
 import { looksLikeProgressQuestion } from "../shared/auto-goal.ts";
 import type { MemberNow } from "../shared/room-now.ts";
-import { isTeamRole, type TeamRole } from "../shared/team-roles.ts";
+import type { TeamRole } from "../shared/team-roles.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
 
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
@@ -314,7 +306,7 @@ import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.t
 import { createRoomAccess, PRIVATE_CHAT_ROOM_WRITE } from "./host/room-access.ts";
 import { outsideRoomNote, sentRow, teammateResultRow, WAIT_CARD_CLOSED_REASON } from "./host/handoff-sent.ts";
 import { createWebhookRoomPost } from "./host/webhook-room-deps.ts";
-import { createRoomJobs, parallelRoomJobsEnabled, type RoomRoundLine } from "./host/room-jobs.ts";
+import { createRoomJobs, parallelRoomJobsEnabled } from "./host/room-jobs.ts";
 import { createDelegatedLevel } from "./host/delegated-level.ts";
 import { createLiveApprovalMode } from "./host/live-approval.ts";
 import { CONSENT_RULE, escapeNotes, labelledLine, OUTSIDE, peerLineText, peerProvenanceNote, reportNote, requestWorkOrigin, type WorkOrigin } from "./peer-provenance.ts"; import { lineNote, PROVENANCE_PROMPT } from "./provenance-label.ts"; import { openRoomThread } from "./host/room-new-thread.ts"; import { createLineLabels } from "./host/line-labels.ts";
@@ -658,7 +650,7 @@ import { personKey, relayedPersonKey } from "./person-key.ts";
 import { createOutsideLineage, OUTSIDE_STAYS_HERE } from "./host/outside-lineage.ts"; import { OUTSIDE_REFUSAL, outsideRouteRefused } from "./host/outside-fence.ts"; import { createOutsideWrites } from "./host/outside-writes.ts";
 import { teamAiOwner } from "./host/team-ai-owner.ts"; import { createTeamOwners, type AskViewer } from "./host/team-owners.ts"; import { createTeamMessages } from "./host/team-messages.ts"; import { createPlaceInbox, guestNameIn, placeInboxViewer } from "./host/place-inbox.ts"; import { relayedTurn } from "./host/relayed-turn.ts"; import { createPersonCalendar } from "./host/person-calendar.ts";
 import { createDevsReports } from "./host/devs-reports.ts"; import { bugReportEndpoint, devsReportSender, devsStatusAsker } from "./devs-report-send.ts"; import { captureRecentLog } from "./recent-log.ts"; import { createShareAnswer } from "./host/share-answer.ts";
-import { createCardRequester, linePersonKey } from "./host/thread-person.ts"; import { selfThreadRefusal } from "./host/self-threads.ts"; import { lookedAfterBy } from "./host/looked-after.ts"; import { createActingPeople, HANDED_PEOPLE_FILE, HandedPeople, type HandedRun, keptPrivate, privateHandBack, withPerson } from "./host/acting-person.ts"; import { createTurnCallSignals } from "./host/turn-call-signals.ts";
+import { createCardRequester, linePersonKey } from "./host/thread-person.ts"; import { selfThreadRefusal } from "./host/self-threads.ts"; import { lookedAfterBy } from "./host/looked-after.ts"; import { createActingPeople, HANDED_PEOPLE_FILE, HandedPeople, keptPrivate, privateHandBack, withPerson } from "./host/acting-person.ts"; import { createTurnCallSignals } from "./host/turn-call-signals.ts";
 import { createThreadRoutes } from "./routes/threads.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { withScopeHint } from "./connector-scope-hint.ts";
@@ -3551,20 +3543,6 @@ const publicBot = (bot: NonNullable<ReturnType<typeof store.bot>>) => {
 };
 const publicBotQueuedMessages = () => queuedSteerSnapshot((botId, threadId) => Boolean(store.taskByThread(botId, threadId)), waitWords.queued);
 
-type GroupTurnOperation = {
-  id: string;
-  threadId: string;
-  botIds: Set<string>;
-  cancelled: boolean;
-  cancellation: AbortController;
-  providerHandshakePending: boolean;
-  queuedQueueIds?: string[];
-  line?: RoomRoundLine;
-  /** The person's room line this run answers (its member turns, mentions included, act for whoever wrote it), or the handed-on work it does. */
-  requestMessageId?: string; handedFor?: HandedRun;
-  goalRun?: LiveGoalRun;
-};
-
 // Wider than busyBotId (setup and queued responders too), so polling clients never mistake a handoff for completion.
 const groupTurnOperations = new Map<string, Set<GroupTurnOperation>>();
 const groupSpeakers = new Map<string, { botId: string; name: string; color: string; since?: number }>();
@@ -3656,183 +3634,11 @@ function createChannel(value: unknown): GroupRecord {
   return store.createGroup(name, memberIds, false, section, setup ?? (deciderReady(cfg, "roomRouting") ? { defaultResponder: { kind: "auto" } } : undefined));
 }
 
-function updateChannel(groupId: string, value: unknown): GroupRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw Object.assign(new Error("body must be a JSON object"), { status: 400 });
-  }
-  const body = value as Record<string, unknown>;
-
-  const existing = store.group(groupId);
-  if (!existing) throw Object.assign(new Error("no such room"), { status: 404 });
-  if (body.memberIds !== undefined && phoneSecretSubmissions.hasGroup(existing.id)) {
-    throw Object.assign(new Error("this channel is securely saving a credential — try again when it finishes"), { status: 409 });
-  }
-  if (
-    channelTaskBlocked(existing) &&
-    (body.memberIds !== undefined || body.defaultResponder !== undefined || body.bulletin !== undefined)
-  ) {
-    throw Object.assign(new Error("this channel is working or waiting on you — finish that turn first"), { status: 409 });
-  }
-  const patch: Record<string, unknown> = {};
-  if (body.name !== undefined) {
-    if (typeof body.name !== "string") throw Object.assign(new Error("room name must be a string"), { status: 400 });
-    const name = body.name.trim();
-    if (!name) throw Object.assign(new Error("room name must not be empty"), { status: 400 });
-    if (name.length > 100) throw Object.assign(new Error("room name must be at most 100 characters"), { status: 400 });
-    if (!fitsOnOneLine(name)) throw Object.assign(Object.assign(new Error("room name must fit on one line"), userErrorFields(userError("serverError.room.nameOneLine"))), { status: 400 });
-    patch.name = name;
-  }
-  if (body.bulletin !== undefined) {
-    if (typeof body.bulletin !== "string") throw Object.assign(new Error("bulletin must be a string"), { status: 400 });
-    if (body.bulletin.length > 12_000) {
-      throw Object.assign(new Error("bulletin must be at most 12000 characters"), { status: 400 });
-    }
-    patch.bulletin = body.bulletin;
-  }
-  if (body.description !== undefined) {
-    if (typeof body.description !== "string") throw Object.assign(new Error("description must be a string"), { status: 400 });
-    const trimmed = body.description.trim();
-    if (!trimmed) patch.description = undefined;
-    else if (/[\n\r]/.test(trimmed)) throw Object.assign(new Error("description must be a single line"), { status: 400 });
-    else if (trimmed.length > 120) throw Object.assign(new Error("description must be at most 120 characters"), { status: 400 });
-    else patch.description = trimmed;
-  }
-  if (body.unread !== undefined) {
-    if (typeof body.unread !== "boolean") throw Object.assign(new Error("unread must be true or false"), { status: 400 });
-    patch.unread = body.unread;
-  }
-  if (body.memberIds !== undefined) {
-    if (existing.dm) throw Object.assign(new Error("direct-message channels cannot change members"), { status: 400 });
-    const roster = checkedMemberIds(body.memberIds);
-    if (!roster.ok) throw Object.assign(new Error(roster.error.replace("channel", "room")), { status: 400 });
-    const audienceConflict = roomAudienceConflict(roster.memberIds, existing.memberIds);
-    if (audienceConflict) throw Object.assign(new Error(audienceConflict), { status: 400 });
-    const removedGoalLead = routines!.listRoutines().some(
-      (routine) =>
-        routine.enabled &&
-        routine.target === "room-goal" &&
-        routine.groupId === existing.id &&
-        !roster.memberIds.includes(routine.botId),
-    ) || routines!.listRuns().some(
-      (run) =>
-        run.target === "room-goal" &&
-        run.groupId === existing.id &&
-        ["queued", "running", "waiting"].includes(run.status) &&
-        !roster.memberIds.includes(run.botId),
-    );
-    if (removedGoalLead) {
-      throw Object.assign(new Error("pause or reassign this room's team-goal routine before removing its lead"), { status: 409 });
-    }
-    patch.memberIds = roster.memberIds;
-  }
-  if (body.defaultResponder !== undefined) {
-    const memberIds = (patch.memberIds as string[] | undefined) ?? existing.memberIds;
-    const responder = checkedGroupResponder(body.defaultResponder, memberIds);
-    if (!responder) throw Object.assign(new Error("invalid default responder"), { status: 400 });
-    patch.defaultResponder = responder;
-  }
-  if (body.roles !== undefined) {
-    const memberIds = (patch.memberIds as string[] | undefined) ?? existing.memberIds;
-    patch.roles = checkedTeamRoles(body.roles, memberIds);
-  }
-  if (body.autoGoal !== undefined) {
-    if (body.autoGoal !== null && typeof body.autoGoal !== "boolean") throw Object.assign(new Error("autoGoal must be true, false or null"), { status: 400 });
-    patch.autoGoal = body.autoGoal ?? undefined;
-  }
-  if (body.goalWaves !== undefined) {
-    if (typeof body.goalWaves !== "boolean") throw Object.assign(new Error("goalWaves must be true or false"), { status: 400 });
-    patch.goalWaves = body.goalWaves ? undefined : false;
-  }
-  if (body.kind !== undefined) {
-    if (body.kind === null) patch.kind = undefined;
-    else if (body.kind === "code" || body.kind === "research") patch.kind = body.kind;
-    else throw Object.assign(new Error("kind must be code or research"), { status: 400 });
-  }
-  if (body.goalFile !== undefined) {
-    if (body.goalFile === null) {
-      patch.goalFile = undefined;
-      patch.goalFileHash = undefined;
-    } else if (typeof body.goalFile === "string" && body.goalFile.trim() && !body.goalFile.includes("..") && !/^[A-Za-z]:|^[/\\]/.test(body.goalFile.trim())) {
-      patch.goalFile = body.goalFile.trim();
-      patch.goalFileHash = undefined; // A new file must be approved again before a research goal may run.
-    } else {
-      throw Object.assign(new Error("goalFile must be a relative path inside the room's working folder"), { status: 400 });
-    }
-  }
-  if (body.researchGoalApprove !== undefined) {
-    if (body.researchGoalApprove !== true) throw Object.assign(new Error("researchGoalApprove must be true"), { status: 400 });
-    if ((patch.kind ?? existing.kind) !== "research") throw Object.assign(new Error("only a research room approves a goal file"), { status: 409 });
-    const goalFile = (patch.goalFile as string | undefined) ?? existing.goalFile;
-    if (!goalFile) throw Object.assign(new Error("set goalFile on the room before approving it"), { status: 400 });
-    const folder = store.pinGroupCwd(groupId) ?? existing.cwd;
-    if (!folder) throw Object.assign(new Error("the research room needs a working folder before its goal file can be approved"), { status: 409 });
-    const loaded = loadResearchGoal(join(folder, goalFile));
-    if (!loaded.ok) throw Object.assign(new Error(loaded.error), { status: 400 });
-    patch.goalFileHash = loaded.hash;
-  }
-  if (body.verify !== undefined) {
-    patch.verify = body.verify === null ? undefined : checkedVerifyCommands(body.verify);
-  }
-  if (body.isolatedBranches !== undefined) {
-    if (typeof body.isolatedBranches !== "boolean" || existing.dm) throw Object.assign(new Error("isolatedBranches must be a boolean on a room"), { status: 400 });
-    if (channelTaskBlocked(existing)) throw Object.assign(new Error("Stop the room before changing isolated branches"), { status: 409 });
-    if (body.isolatedBranches && (body.kind ?? existing.kind) === "research") throw Object.assign(new Error("Isolated branches are disabled for research rooms"), { status: 400 });
-    patch.isolatedBranches = body.isolatedBranches;
-  }
-  if (body.kind === "research") patch.isolatedBranches = false;
-  if (body.branchFiles !== undefined) {
-    if (existing.dm || channelTaskBlocked(existing)) throw Object.assign(new Error("Stop the room before changing worktree files"), { status: 409 });
-    if (!Array.isArray(body.branchFiles) || body.branchFiles.length > 16 || body.branchFiles.some((path) => typeof path !== "string" || path.length > 200)) throw Object.assign(new Error("branchFiles must be at most 16 relative paths"), { status: 400 });
-    try { patch.branchFiles = branchPaths(body.branchFiles); } catch { throw Object.assign(new Error("branchFiles must stay inside the room folder and exclude .git"), { status: 400 }); }
-  }
-  if (body.projectProfile !== undefined) {
-    if (existing.dm) throw Object.assign(new Error("direct-message channels cannot have a project profile"), { status: 400 });
-    patch.projectProfile = body.projectProfile === null ? undefined : checkedProjectProfile(body.projectProfile);
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "turnTimeoutMinutes")) {
-    if (!existing.dm) {
-      throw Object.assign(new Error("set the turn limit on that conversation"), { status: 400 });
-    }
-    const parsed = parseConversationTurnTimeout(body.turnTimeoutMinutes);
-    if (!parsed.ok) throw Object.assign(new Error(parsed.error), { status: 400 });
-    patch.turnTimeoutMinutes = parsed.minutes;
-  }
-  if (body.cwd !== undefined) {
-    if (existing.dm) throw Object.assign(new Error("direct-message channels cannot have a working folder"), { status: 400 });
-    if (existing.pinnedCwd !== undefined) {
-      throw Object.assign(new Error("the room's working folder is fixed after its first turn"), { status: 409 });
-    }
-    const checked = validateBotCwd(body.cwd);
-    if (!checked.ok) throw Object.assign(new Error(checked.error), { status: 400 });
-    patch.cwd = checked.cwd ?? undefined;
-  }
-  if (body.pinnedMessageId !== undefined) {
-    if (body.pinnedMessageId === null || body.pinnedMessageId === "") patch.pinnedMessageId = undefined;
-    else if (typeof body.pinnedMessageId === "string" && /^[\w-]+$/.test(body.pinnedMessageId)) {
-      patch.pinnedMessageId = body.pinnedMessageId;
-    } else throw Object.assign(new Error("pinnedMessageId must be a message id"), { status: 400 });
-  }
-  if (body.section !== undefined) {
-    if (body.section === null) patch.section = undefined;
-    else if (typeof body.section !== "string") throw Object.assign(new Error("section must be a string"), { status: 400 });
-    else {
-      const trimmed = body.section.trim();
-      if (!trimmed) patch.section = undefined;
-      else if (trimmed.length > 60) throw Object.assign(new Error("section must be at most 60 characters"), { status: 400 });
-      else patch.section = trimmed;
-    }
-  }
-  // Admin-only, and the only way a room's floor widens; a Chief's PATCH never has it.
-  const resetAudience = body.resetAudience !== undefined;
-  if (resetAudience) {
-    if (body.resetAudience !== true) throw Object.assign(new Error("resetAudience must be true"), { status: 400 });
-    patch.audienceFloor = undefined;
-  }
-  const group = store.patchGroup(groupId, patch);
-  if (resetAudience) audienceChanged();
-  if (!group) throw Object.assign(new Error("no such room"), { status: 404 });
-  return group;
-}
+const { updateChannel } = createChannelUpdate({
+  store, routines: () => routines, checkedMemberIds, roomAudienceConflict, audienceChanged,
+  phoneSecretSubmissions: { hasGroup: (groupId) => phoneSecretSubmissions.hasGroup(groupId) },
+  channelTaskBlocked: (group) => channelTaskBlocked(group),
+});
 
 const channelTaskBlocked = (group: GroupRecord) =>
   groupIsWorking(group) ||
@@ -4223,6 +4029,7 @@ function publicGroupState(record: GroupRecord): WireGroup {
     // Always present (null when cleared), so a client's shallow merge clears a stale value.
     description: record.description ?? null,
     turnTimeoutMinutes: record.turnTimeoutMinutes ?? null,
+    projectProfile: record.dm ? undefined : record.projectProfile ?? null,
     usage: usage ?? null,
     memberContext: roomMemberContexts.forThread(group.threadId) ?? null,
     busyBotId: currentSpeaker?.botId ?? (activeWorking ? record.busyBotId : null),
@@ -4286,9 +4093,6 @@ function finishGroupGoalRun(
 function updateGroupGoalRunProgress(operation: GroupTurnOperation, detail: string, text?: Parameters<typeof goalCards.progress>[3]): void {
   goalCards.progress(operation.threadId, operation.goalRun, detail, text);
 }
-
-type GroupMemberBotAvailability = "ready" | "busy" | "unavailable" | "cancelled" | "timed_out";
-type GroupMemberBotWaitResult = Exclude<GroupMemberBotAvailability, "busy">;
 
 function groupMemberBotAvailability(botId: string, operation: GroupTurnOperation): GroupMemberBotAvailability {
   if (operation.cancelled || operation.cancellation.signal.aborted) return "cancelled";
@@ -9689,24 +9493,6 @@ function reconcileParkedRoots(): void {
 }
 const MAX_GROUP_HOPS = 1;
 
-type GroupMemberTurnOutcome = GoalStepOutcome;
-type GroupTurnOrchestration = {
-  cwd?: string;
-  roomHandoffId?: string;
-  resumed?: boolean;
-  systemInstructions: string;
-  turnInstructions?: string;
-  liveRoster?: string;
-  turnNote?: string;
-  turnRestartNote?: string;
-  followMentions: boolean;
-  result: { replyText?: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null };
-  onClaimed?: () => void;
-  onTurnStarted?: (turnId: string) => void;
-  coordination?: { id: string; settle: (outcome: HostTurnResult) => void };
-  goalRunId?: string;
-};
-
 function teammateReportContext(requestId: string, readerBotId?: string): string {
   const node = coordinator.node(requestId);
   const parent = node?.parentId ? coordinator.node(node.parentId) : undefined;
@@ -10736,417 +10522,16 @@ async function runClaimedGroupMemberTurn(
   }
 }
 
-/** One wave task's turn in its own group thread: the server runs one provider turn per thread, so tasks
- * beside each other each need a thread, and the settled result is appended back into the goal's thread. */
-async function runLaneGoalStep(
-  args: {
-    groupId: string;
-    threadId: string;
-    bot: BotRecord;
-    operation: GroupTurnOperation;
-    skillAuthoringClaim: { claimed: boolean };
-    coordinator: boolean;
-    instructions: string;
-    lane: { threadId: string; brief: string };
-    lead?: BotRecord;
-  },
-  run: NonNullable<GroupTurnOperation["goalRun"]>,
-): Promise<{ ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }> {
-  let requested = false;
-  for (;;) {
-    const laneOperation = beginGroupTurnOperation(args.groupId, args.lane.threadId, [args.bot.id]);
-    try {
-      const availability = await waitForGroupMemberBot(args.bot, laneOperation, (detail) => {
-        updateGroupGoalRunProgress(args.operation, `${detail} This goal will continue when they are available.`);
-      });
-      if (availability === "cancelled") return { ran: false, replyText: "", outcome: "cancelled" };
-      if (availability === "unavailable") {
-        return { ran: false, replyText: "", outcome: "unavailable", stopReason: `${args.bot.name} is no longer available` };
-      }
-      if (availability === "timed_out") {
-        const minutes = Math.max(1, Math.round(GROUP_GOAL_WAIT_MAX_MS / 60_000));
-        return {
-          ran: false,
-          replyText: "",
-          outcome: "busy",
-          stopReason: `${args.bot.name} stayed busy in another conversation for ${minutes} minute${minutes === 1 ? "" : "s"}`,
-        };
-      }
-      if (run.turnCount >= run.maxTurns) return { ran: false, replyText: "" };
-
-      if (!requested) {
-        requested = true;
-        store.appendMessage(args.lane.threadId, {
-          role: "bot",
-          kind: "text",
-          from: { botId: args.lead?.id ?? args.bot.id, name: args.lead?.name ?? args.bot.name, color: args.lead?.color ?? args.bot.color },
-          text: args.lane.brief,
-        });
-      }
-      const result: GroupTurnOrchestration["result"] = {};
-      let claimed = false;
-      try {
-        const ran = await runGroupMemberTurn(
-          args.groupId,
-          args.lane.threadId,
-          args.bot.id,
-          1,
-          new Set(),
-          undefined,
-          undefined,
-          () => args.operation.cancelled || laneOperation.cancelled,
-          () => groupProviderHandshakeStarted(laneOperation),
-          () => groupProviderHandshakeSettled(laneOperation),
-          args.skillAuthoringClaim,
-          {
-            systemInstructions: args.instructions,
-            followMentions: false,
-            result,
-            goalRunId: run.runId,
-            onClaimed: () => {
-              if (claimed) return;
-              claimed = true;
-              run.turnCount += 1;
-              args.operation.botIds.add(args.bot.id);
-              updateGroupGoalRunProgress(
-                args.operation,
-                `${args.bot.name} is working on team turn ${run.turnCount} of ${run.maxTurns}.`,
-              );
-            },
-          },
-        );
-        // Busy here is a lost claim race, so retry in-step; a parked member is deliberately not retried.
-        if (result.outcome === "busy") continue;
-        if (ran && result.outcome === "settled" && result.replyText?.trim()) {
-          store.appendMessage(args.threadId, {
-            role: "bot",
-            kind: "text",
-            from: { botId: args.bot.id, name: args.bot.name, color: args.bot.color },
-            text: result.replyText.trim(),
-          });
-        }
-        return {
-          ran,
-          replyText: result.replyText ?? "",
-          outcome: result.outcome,
-          stopReason: result.stopReason,
-        };
-      } finally {
-        args.operation.botIds.delete(args.bot.id);
-      }
-    } finally {
-      finishGroupTurnOperation(args.groupId, laneOperation);
-    }
-  }
-}
-
-/** One wave batch dispatched through the runtime tree: each task is a work child in its own lane thread, and
- * the child's result reports back into the goal thread. The wave root replies "poll", so it settles in place
- * once the children settle and no coordinator turn runs outside the run loop. */
-async function runGoalWaveOnTree(args: {
-  groupId: string;
-  threadId: string;
-  coordinatorBot: BotRecord;
-  run: NonNullable<GroupTurnOperation["goalRun"]>;
-  cancelled(): boolean;
-  batch: Array<{ bot: BotRecord; role?: string; assignment: string; readOnly?: boolean; cwd?: string }>;
-}): Promise<Array<{ botId: string; ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }>> {
-  const idle = (botId: string, outcome: GroupMemberTurnOutcome, stopReason?: string | null) => ({ botId, ran: false, replyText: "", outcome, stopReason });
-  const room = store.group(args.groupId);
-  if (!room || room.dm || args.batch.length === 0) {
-    return args.batch.map((task) => idle(task.bot.id, "dispatch_failed", "this goal's channel cannot open wave lanes"));
-  }
-  const sender = { id: args.coordinatorBot.id, name: args.coordinatorBot.name };
-  const children = args.batch.map((task) => ({
-    ...task,
-    lane: roomJobs.openLane(room, args.threadId, task.bot.id, sender, task.assignment, task.cwd ? { cwd: task.cwd } : undefined),
-    childId: undefined as string | undefined,
-    refusal: undefined as string | undefined,
-  }));
-  const waveId = randomUUID();
-  coordinator.beginTurn({
-    id: waveId,
-    address: { groupId: args.groupId, threadId: args.threadId, botId: args.coordinatorBot.id },
-    brief: `Goal wave for: ${args.run.goal}`,
-    level: roomTurnApprovalMode(args.coordinatorBot, args.threadId),
-    origin: OUTSIDE,
-    reply: "poll",
-  });
-  for (const child of children) {
-    const brief = child.role ? `${child.role}: ${child.assignment}` : child.assignment;
-    try {
-      const { node } = coordinator.enqueue(
-        { groupId: args.groupId, threadId: args.threadId, botId: args.coordinatorBot.id },
-        waveId, waveId, { botId: child.bot.id, threadId: child.lane.threadId }, brief, { mode: child.readOnly ? "consult" : "work", thread: "new" },
-      );
-      child.childId = node.id;
-    } catch (error) {
-      child.refusal = error instanceof Error ? error.message : String(error);
-    }
-  }
-  coordinator.endTurn(waveId, { ok: true, text: "goal wave dispatched" });
-  const dispatched = children.filter((child) => child.childId);
-  const terminal = new Set(["completed", "failed", "cancelled"]);
-  const deadline = Date.now() + GROUP_GOAL_WAIT_MAX_MS;
-  for (;;) {
-    if (args.cancelled() || dispatched.every((child) => terminal.has(coordinator.node(child.childId!)?.status ?? ""))) break;
-    if (Date.now() >= deadline) break;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  if (args.cancelled()) {
-    for (const child of dispatched) void interruptDirectThread(child.bot.id, child.lane.threadId);
-  }
-  return children.map((child) => {
-    const node = child.childId ? coordinator.node(child.childId) : undefined;
-    if (!node) return idle(child.bot.id, "dispatch_failed", child.refusal);
-    if (node.status === "completed") return { botId: child.bot.id, ran: true, replyText: node.result ?? "", outcome: "settled" as const };
-    if (node.status === "cancelled") return idle(child.bot.id, "cancelled", "the wave was stopped");
-    if (node.status === "failed") {
-      return { botId: child.bot.id, ran: true, replyText: node.result ?? "", outcome: "provider_failed" as const, stopReason: node.outcomeDetail ?? node.result.split("\n", 1)[0]?.slice(0, 120) };
-    }
-    return idle(child.bot.id, "busy", `${child.bot.name} has not finished the assignment`);
-  });
-}
-
-async function runGroupGoalStep(args: {
-  groupId: string;
-  threadId: string;
-  bot: BotRecord;
-  operation: GroupTurnOperation;
-  skillAuthoringClaim: { claimed: boolean };
-  coordinator: boolean;
-  instructions: string;
-  lead?: BotRecord;
-  lane?: { threadId: string; brief: string };
-  cwd?: string;
-}): Promise<{ ran: boolean; replyText: string; outcome?: GroupMemberTurnOutcome; stopReason?: string | null }> {
-  const run = args.operation.goalRun;
-  if (!run || args.operation.cancelled || run.turnCount >= run.maxTurns) {
-    return { ran: false, replyText: "" };
-  }
-  if (args.lane) return runLaneGoalStep({ ...args, lane: args.lane }, run);
-  for (;;) {
-    const availability = await waitForGroupMemberBot(args.bot, args.operation, (detail) => {
-      updateGroupGoalRunProgress(args.operation, `${detail} This goal will continue when they are available.`);
-    });
-    if (availability === "cancelled") return { ran: false, replyText: "", outcome: "cancelled" };
-    if (availability === "unavailable") {
-      return { ran: false, replyText: "", outcome: "unavailable", stopReason: `${args.bot.name} is no longer available` };
-    }
-    if (availability === "timed_out") {
-      const minutes = Math.max(1, Math.round(GROUP_GOAL_WAIT_MAX_MS / 60_000));
-      return {
-        ran: false,
-        replyText: "",
-        outcome: "busy",
-        stopReason: `${args.bot.name} stayed busy in another conversation for ${minutes} minute${minutes === 1 ? "" : "s"}`,
-      };
-    }
-    if (run.turnCount >= run.maxTurns) return { ran: false, replyText: "" };
-
-    const result: GroupTurnOrchestration["result"] = {};
-    let claimed = false;
-    const coordinatorTurn = args.coordinator ? goalTurns.begin(args.threadId) : undefined;
-    try {
-      const ran = await runGroupMemberTurn(
-        args.groupId,
-        args.threadId,
-        args.bot.id,
-        run.turnCount === 0 ? 0 : 1,
-        new Set(),
-        undefined,
-        undefined,
-        () => args.operation.cancelled,
-        () => groupProviderHandshakeStarted(args.operation),
-        () => groupProviderHandshakeSettled(args.operation),
-        args.skillAuthoringClaim,
-        {
-          systemInstructions: args.instructions,
-          cwd: args.cwd,
-          followMentions: false,
-          result,
-          goalRunId: run.runId,
-          onClaimed: () => {
-            if (claimed) return;
-            claimed = true;
-            run.turnCount += 1;
-            args.operation.botIds.add(args.bot.id);
-            updateGroupGoalRunProgress(
-              args.operation,
-              `${args.bot.name} is working on team turn ${run.turnCount} of ${run.maxTurns}.`,
-            );
-          },
-          onTurnStarted: (turnId) => {
-            if (coordinatorTurn && !coordinatorTurn.turnId) coordinatorTurn.turnId = turnId;
-          },
-        },
-      );
-      // Busy here is a lost claim race, so retry in-step; a parked member is deliberately not retried.
-      if (result.outcome === "busy") continue;
-      return {
-        ran,
-        replyText: result.replyText ?? "",
-        outcome: result.outcome,
-        stopReason: result.stopReason,
-      };
-    } finally {
-        // An idle waiter must never redirect the bot's Stop button away from unrelated direct work.
-      args.operation.botIds.delete(args.bot.id);
-      if (coordinatorTurn) goalTurns.end(args.threadId, coordinatorTurn, result.outcome);
-    }
-  }
-}
-
-const goalBranchRuns = createGoalBranchRuns({ store, dataDir: DATA_DIR, release: async (groupId, threadId) => {
-  const threads = [threadId, ...(store.group(groupId)?.memberIds ?? []).flatMap((id) => roomLaneThreads(id, threadId))];
-  for (const thread of threads) for (const instance of registry.instances()) {
-    if (instance.adapter.releaseIdleThread && !await instance.adapter.releaseIdleThread(thread)) throw new Error("A goal engine still holds this worktree; wait for its turn to stop before deciding");
-  }
-} });
-
-async function runGroupGoalOperation(args: {
-  groupId: string;
-  threadId: string;
-  coordinator: BotRecord;
-  members: BotRecord[];
-  operation: GroupTurnOperation;
-}): Promise<void> {
-  const run = args.operation.goalRun;
-  if (!run) return;
-  const skillAuthoringClaim = { claimed: false };
-  const room = store.group(args.groupId);
-  const pinRoomFolder = () => {
-    const task = store.groupTaskByThread(args.groupId, args.threadId);
-    return task?.pinnedCwd === undefined && !room?.cwd ? null : store.pinGroupCwd(args.groupId, args.threadId);
-  };
-  const research = room?.kind === "research" ? prepareResearchRun({
-    groupId: args.groupId,
-    goalFile: room.goalFile,
-    goalFileHash: room.goalFileHash,
-    folder: pinRoomFolder() ?? room.cwd ?? undefined,
-    runId: run.runId,
-    dataDir: DATA_DIR,
-    eventsDir: EVENTS_DIR,
-    members: args.members,
-    memberThreads: (botId) => [args.threadId, ...roomLaneThreads(botId, args.threadId)],
-    instanceOf: (botId) => store.bot(botId)?.modelSelection.instanceId,
-  }) : undefined;
-  if (research && !research.ok) {
-    finishGroupGoalRun(args.groupId, args.operation, research.status, research.detail);
-    return;
-  }
-  const wiring = research?.wiring;
-  const note = (text: string) => store.appendMessage(args.threadId, { role: "bot", kind: "activity", from: { botId: args.coordinator.id, name: args.coordinator.name, color: args.coordinator.color }, tool: { name: text, ok: false } });
-  try {
-  const isolated = room ? await goalBranchRuns.prepare(room, args.threadId, run.runId, run.goal, pinRoomFolder()) : {};
-  if (args.operation.cancelled) { if (isolated.manager) goalCards.branches(args.threadId, run, isolated.manager.card()); return; }
-  if (isolated.notice) note(isolated.notice);
-  const manager = isolated.manager;
-  const workFolder = () => manager?.state().cwd ?? pinRoomFolder();
-  const branchFiles = [...(room?.branchFiles ?? [])];
-  const setup = structuredClone(room?.projectProfile?.setup ?? []);
-  const prepare = async (cwd: string) => {
-    if (manager && branchFiles.length) await manager.copyFiles(cwd, branchFiles);
-    for (const command of setup) {
-      if (args.operation.cancelled) return;
-      const result = await runVerifyCommand(command, cwd, args.operation.cancellation.signal);
-      if (!args.operation.cancelled && result.exitCode !== (command.expectExit ?? 0)) throw new GoalBranchWorkflowError(`Worktree setup ${command.id} failed: ${result.output.slice(-300)}`);
-    }
-  };
-  if (manager) {
-    goalCards.branches(args.threadId, run, manager.card());
-    if (branchFiles.length && isolated.created) await manager.copyFiles(manager.state().cwd, branchFiles);
-  }
-  const branchWork = manager ? createGoalBranchWorkflow({ manager, run, lead: args.coordinator, roleOf: (id) => roomRoles(room)?.[id], botOf: (id) => store.bot(id) ?? undefined,
-    cancelled: () => args.operation.cancelled, prepare,
-    execute: (batch) => runGoalWaveOnTree({ groupId: args.groupId, threadId: args.threadId, coordinatorBot: args.coordinator, run, cancelled: () => args.operation.cancelled, batch }),
-    note, update: (card) => goalCards.branches(args.threadId, run, card),
-  }) : undefined;
-  await runGoalRun({
-    run,
-    branchWork,
-    coordinator: args.coordinator,
-    members: args.members,
-    tasksAllowed: Boolean(room && !room.dm) && goalWavesEnabled({ memberCount: args.members.filter((member) => !member.hidden).length, goalWaves: room?.goalWaves }),
-    ...(room && !room.dm && roomRoles(room) ? { roles: roomRoles(room) } : {}),
-    cancelled: () => args.operation.cancelled,
-    current: (botId) => store.bot(botId) ?? undefined,
-    taskThread: (_bot, assignment) => {
-      const group = store.group(args.groupId);
-      if (!group || group.dm) return undefined;
-      const snippet = assignment.replace(/\s+/g, " ").trim().slice(0, 48);
-      const task = store.createGroupTask(args.groupId, `${group.name} · ${snippet || "goal task"}`, false);
-      return task ? { threadId: task.threadId } : undefined;
-    },
-    step: (bot, coordinator, instructions, lane) => runGroupGoalStep({ ...args, bot, skillAuthoringClaim, coordinator, instructions: manager ? `${instructions}\nServer Git state: ${JSON.stringify(manager.card())}. Work only in the integration folder as Lead; implementation belongs to Worker tasks.` : instructions, lead: args.coordinator, lane, cwd: manager?.state().cwd }),
-    dispatchWave: (batch) => args.operation.goalRun
-      ? runGoalWaveOnTree({ groupId: args.groupId, threadId: args.threadId, coordinatorBot: args.coordinator, run: args.operation.goalRun, cancelled: () => args.operation.cancelled, batch })
-      : Promise.resolve(batch.map((task) => ({ botId: task.bot.id, ran: false, replyText: "", outcome: "dispatch_failed" as const }))),
-    snapshotWrites: async () => {
-      const cwd = workFolder() ?? undefined;
-      return cwd ? writesSnapshot(cwd) : undefined;
-    },
-    writesOutside: async (before, declared) => {
-      const cwd = workFolder() ?? undefined;
-      if (!cwd) return undefined;
-      const after = await writesSnapshot(cwd);
-      return after ? writesOutside(before, after, declared) : undefined;
-    },
-    verify: wiring?.verify ?? (room && !room.dm && room.verify?.length ? room.verify : undefined),
-    ...(room && !room.dm && room.projectProfile ? {
-      projectProfile: room.projectProfile,
-      ...(!pinRoomFolder() ? { projectRefusal: "This room has a project profile but no working folder. Set the room's folder, then send the goal again." } : {}),
-    } : {}),
-    recordBaseline: (baseline) => goalCards.baseline(args.threadId, args.operation.goalRun, baseline),
-    ...(wiring ? {
-      research: wiring.research,
-      missingHandoffFiles: wiring.missingHandoffFiles,
-      heldOutTouched: wiring.heldOutTouched,
-      readMetric: wiring.readMetric,
-      recordMetric: wiring.recordMetric,
-    } : {}),
-    ...(room && !room.dm && room.verify?.length && !pinRoomFolder()
-      ? { verifyRefusal: "This room has completion checks but no working folder to run them in. Set the room's folder, then send the goal again." }
-      : {}),
-    runVerify: async (command) => {
-      const roomCwd = workFolder();
-      const result = await (roomCwd ? runVerifyCommand(command, roomCwd, args.operation.cancellation.signal) : { id: command.id, exitCode: null, output: "the room has no working folder" });
-      wiring?.recordVerify(result);
-      return result;
-    },
-    ...(room?.kind === "research" ? {
-      vendorOf: (botId: string) => {
-        const bot = store.bot(botId);
-        return bot ? modelVendor(registry.cliTarget(bot.modelSelection.instanceId)?.driverKind, bot.modelSelection.model) : undefined;
-      },
-    } : {}),
-    recordBrief: (brief) => goalCards.brief(args.threadId, args.operation.goalRun, brief),
-    laneEdits: async (botId, sinceMs) => {
-      const found = await Promise.all(roomLaneThreads(botId, args.threadId).map((threadId) =>
-        readFile(join(EVENTS_DIR, `${threadId}.ndjson`), "utf8").then((raw) => editedPaths(raw, sinceMs), () => [])));
-      return found.flat();
-    },
-    steerLane: async (botId, text) => {
-      const threadId = roomLaneThreads(botId, args.threadId).find((candidate) => runningTurnEngines.has(candidate));
-      const instance = threadId ? runningTurnInstance(store.bot(botId), threadId) : null;
-      if (!threadId || !instance?.adapter.capabilities.queueing || !instance.adapter.steer) return false;
-      const outcome = await instance.adapter.steer(threadId, text).catch((): SteerOutcome => "indeterminate");
-      if (outcome === "refused") return false;
-      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: text, ok: false } });
-      return outcome === "steered";
-    },
-    recordConflict: (conflict) => goalCards.conflict(args.threadId, args.operation.goalRun, conflict),
-    finish: (status, detail, text) => {
-      wiring?.recordEnd(status, detail);
-      finishGroupGoalRun(args.groupId, args.operation, status, detail, text);
-    },
-    progress: (detail, text) => updateGroupGoalRunProgress(args.operation, detail, text),
-    note,
-  });
-  } catch (error) {
-    if (!args.operation.cancelled) finishGroupGoalRun(args.groupId, args.operation, error instanceof GoalBranchWorkflowError ? error.status : "blocked", error instanceof Error ? error.message : "Goal branches could not run");
-  }
-}
+const { runGroupGoalOperation, goalBranchRuns } = createGoalOperations({
+  store, registry, coordinator, roomJobs, goalCards, goalTurns, runningTurnEngines,
+  beginGroupTurnOperation, finishGroupTurnOperation, waitForGroupMemberBot, updateGroupGoalRunProgress, finishGroupGoalRun,
+  runGroupMemberTurn, groupProviderHandshakeStarted, groupProviderHandshakeSettled, roomTurnApprovalMode, interruptDirectThread,
+  roomLaneThreads, roomRoles, runningTurnInstance,
+});
+const { run: runRoomPlan } = createRoomPlans({
+  store, goalTurns, waitForGroupMemberBot, runGroupMemberTurn, groupProviderHandshakeStarted, groupProviderHandshakeSettled,
+  projectContext: (groupId) => profileOutlineContext(store.group(groupId)?.projectProfile),
+});
 
 type StartGroupTurnOptions = {
   threadId?: string;
@@ -11209,21 +10594,6 @@ function roomNowFor(group: GroupRecord, threadId: string): MemberNow[] {
       return last.text ? { text: last.text } : undefined;
     },
   });
-}
-
-/** A room's roles as the person set them: member ids only, known roles only, at most one lead; none means undefined. */
-function checkedTeamRoles(value: unknown, memberIds: readonly string[]): Record<string, TeamRole> | undefined {
-  const refuse = (message: string) => Object.assign(new Error(message), { status: 400 });
-  if (value === null) return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw refuse("roles must map member ids to lead, worker, tester or reviewer");
-  const roles: Record<string, TeamRole> = {};
-  for (const [botId, role] of Object.entries(value)) {
-    if (!memberIds.includes(botId)) throw refuse("roles may name only members of this room");
-    if (!isTeamRole(role)) throw refuse("roles must map member ids to lead, worker, tester or reviewer");
-    roles[botId] = role;
-  }
-  if (Object.values(roles).filter((role) => role === "lead").length > 1) throw refuse("a room has at most one lead");
-  return Object.keys(roles).length > 0 ? roles : undefined;
 }
 
 function roomLeadMember<T extends { id: string }>(room: GroupRecord, members: readonly T[]): T | undefined {
@@ -11341,7 +10711,7 @@ function startGroupTurn(
     throw Object.assign(new Error("the selected goal coordinator is not an active room member"), { status: 409 });
   }
   // Read the room before this message is appended just below.
-  const autoCandidate = !group.dm && channelMode === "chat" && group.defaultResponder.kind === "auto" &&
+  const autoCandidate = !group.dm && channelMode === "chat" && planTextFromMessage(text) === null && group.defaultResponder.kind === "auto" &&
     deciderReady(cfg, "roomRouting");
   const historyBeforeSend = autoCandidate
     ? (() => {
@@ -11419,6 +10789,9 @@ function startGroupTurn(
   const goalCoordinator = channelMode === "goal"
     ? requestedGoalCoordinator ?? explicitlyMentionedLead ?? roomLeadMember(group, routableMembers) ?? selectGroupGoalCoordinator(routableMembers, group.defaultResponder)
     : null;
+  const planRequest = channelMode === "chat" && !group.dm ? planTextFromMessage(text) : null;
+  const planLead = planRequest === null ? null
+    : explicitlyMentionedLead ?? roomLeadMember(group, routableMembers) ?? selectGroupGoalCoordinator(routableMembers, group.defaultResponder);
   if (!responders.length && group.dm) {
     const lastSpeakerId = [...store.messagesFor(threadId)]
       .reverse()
@@ -11466,7 +10839,7 @@ function startGroupTurn(
   const operation = beginGroupTurnOperation(
     groupId,
     threadId,
-    goalCoordinator || autoRoute ? [] : responders.map((responder) => responder.id),
+    goalCoordinator || autoRoute || (planRequest !== null && planLead) ? [] : responders.map((responder) => responder.id),
   );
   // Only a person's own chat line; cloudHomeLendingRefusal still proves it is the owner's.
   if (!goalCoordinator && message.role === "user" && !message.via && (!options.trigger || options.trigger.kind === "user" || options.trigger.kind === "owner")) {
@@ -11496,7 +10869,12 @@ function startGroupTurn(
       });
       return;
     }
-    if (goalCoordinator) {
+    if (planRequest !== null && planLead) {
+      await runRoomPlan({
+        groupId, threadId, lead: planLead, members, request: planRequest, operation,
+        previous: latestRoomPlan(store.messagesFor(threadId))?.draft,
+      });
+    } else if (goalCoordinator) {
       await runGroupGoalOperation({ groupId, threadId, coordinator: goalCoordinator, members, operation });
     } else {
       let round = responders;
@@ -12801,7 +12179,7 @@ ROUTES.push(createGroupRoutes({
 const goalThreadWorking = (id: string, thread: string) => groupThreadIsWorking(id, thread) || Boolean(store.group(id)?.memberIds.some((botId) => roomLaneThreads(botId, thread).some((lane) => runningTurnEngines.has(lane))));
 ROUTES.push(createGoalBranchRoutes({ store, working: goalThreadWorking, threadRefusal: cloudThreadRefusal, decide: goalBranchRuns.decide }), createGoalAcceptRoutes({ store, working: goalThreadWorking, threadRefusal: cloudThreadRefusal, confirmedText: (threadId) => serverLine(threadLanguage(threadId), "server.goal.confirmed") }));
 ROUTES.push(createChannelRoutes({
-  store, threadRead: teamMessages.seen,
+  store, threadRead: teamMessages.seen, threadVisible: (auth, threadId) => visibleTo(viewerFor(auth)).thread(threadId),
   personMarkRoom: personRooms.personMarkRoom,
   groupFor: personRooms.groupForAuth,
   cfg,

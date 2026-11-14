@@ -146,6 +146,8 @@
 .workflow-check > div { display:flex; align-items:end; gap:8px; }
 .workflow-check > div > label { flex:1; }
 .workflow-check-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.room-workflow-settings label > span { font-size:11px; color:var(--color-ink-tertiary); }
+.room-workflow-settings .workflow-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .goal-insights section { margin-top:16px; padding:12px; border:1px solid var(--color-hairline); background:var(--color-card); border-radius:4px; }
 .goal-insights h3 { font-size:12px; font-weight:600; margin-bottom:8px; }
 .goal-insights p,.goal-insights li { font-size:12px; line-height:1.5; color:var(--color-ink-secondary); overflow-wrap:anywhere; }
@@ -155,5 +157,15 @@
 .goal-insights dl { display:grid; gap:6px; margin-top:10px; font-size:11px; }
 .goal-insights dl > div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px; }
 .goal-insights dd { font-family:"JetBrains Mono",monospace; }
+.goal-run-record h4 { margin:10px 0 2px; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--color-ink-tertiary); }
+.goal-run-record [data-goal-brief-list] li { display:list-item; margin-left:16px; padding-block:2px; border-bottom:0; list-style:disc; }
+.goal-run-record .is-warning h4,.goal-run-record .is-warning li { color:var(--color-warning); }
+.goal-run-record [data-goal-area] { gap:2px; padding-block:6px; }
+.goal-run-record [data-read-only="true"] strong { color:var(--color-ink-secondary); }
+.goal-run-record [data-passed="false"] strong { color:var(--color-danger); }
+.goal-run-record [data-passed="true"] strong { color:var(--color-success); }
+.goal-run-record code { font:11px/1.5 "JetBrains Mono",monospace; overflow-wrap:anywhere; }
+.goal-run-record summary { cursor:pointer; font-size:11px; color:var(--color-ink-tertiary); }
+.goal-run-record pre { max-height:180px; overflow:auto; margin-top:4px; padding:6px 8px; background:var(--color-inset); border-radius:4px; font:11px/1.45 "JetBrains Mono",monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
 .room-workflow-settings :is(input,select,textarea,button):focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; }
 @media (pointer:coarse) { .room-workflow-settings :is(input,select,textarea,button) { min-height:44px; } .room-workflow-settings :is(input,select,textarea) { font-size:16px; } }

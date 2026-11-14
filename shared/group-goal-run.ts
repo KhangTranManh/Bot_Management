@@ -22,6 +22,19 @@ export interface GoalBrief {
   constraints: string[];
   /** Questions the person answers before any work starts; any entry stops the run at needs-input. */
   openQuestions: string[];
+  /** The project's areas the work is divided into; each Worker task writes inside exactly one of them. */
+  structure?: GoalArea[];
+}
+
+/** One area of the project in the Lead's structure. Areas never share a path. */
+export interface GoalArea {
+  name: string;
+  /** Relative files or folders; "." is the whole project. */
+  paths: string[];
+  /** What the area holds, in a few words. */
+  owns: string;
+  /** No task may write here (contract tests, held-out data, the evaluation). */
+  readOnly?: boolean;
 }
 
 /** A Worker's edit to a file another Worker's task owns, seen while their wave ran. */
@@ -48,6 +61,8 @@ export interface GoalCheckResult {
   output: string;
 }
 
+export const checkPassed = (check: GoalCheckResult): boolean => check.exitCode === check.expectExit;
+
 /** Project preparation and check results taken before the first bot turn of this goal. */
 export interface GoalBaseline {
   startedAt: number;
@@ -71,6 +86,8 @@ export interface GroupGoalRunCardData {
   startedAt: number;
   finishedAt?: number;
   brief?: GoalBrief;
+  /** Outline selected before the run and any explicit reason the Lead changed its brief. */
+  planSource?: import("./room-plan.ts").GoalPlanSource;
   baseline?: GoalBaseline;
   branches?: GoalBranchCard;
   /** The latest conflicts of the run, oldest first. */

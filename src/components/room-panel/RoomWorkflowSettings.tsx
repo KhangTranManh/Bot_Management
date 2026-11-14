@@ -1,20 +1,8 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
 import { api, useStore, type Group } from "@/state/store";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { VerifyCommand } from "../../../shared/wire";
-
-export function verifyDraftProblem(checks: readonly VerifyCommand[]): string | undefined {
-  if (checks.length > 8) return "Tối đa 8 lệnh verify.";
-  const ids = new Set<string>();
-  for (const check of checks) {
-    if (!check.id.trim() || !check.command.trim()) return "Mỗi lệnh cần id và nội dung lệnh.";
-    if (ids.has(check.id.trim())) return "Id của các lệnh không được trùng nhau.";
-    ids.add(check.id.trim());
-    if (check.timeoutSec !== undefined && (!Number.isFinite(check.timeoutSec) || check.timeoutSec <= 0 || check.timeoutSec > 3600)) return "Timeout cần lớn hơn 0 và không quá 3600 giây.";
-    if (check.expectExit !== undefined && !Number.isInteger(check.expectExit)) return "Mã thoát mong đợi phải là số nguyên.";
-  }
-}
+import { trimmedCommands, verifyDraftProblem, VerifyCommandsEditor } from "./VerifyCommandsEditor";
 
 export function RoomWorkflowSettings({ group }: { group: Group }) {
   const { dispatch } = useStore();
@@ -48,9 +36,8 @@ export function RoomWorkflowSettings({ group }: { group: Group }) {
   const save = () => {
     const problem = kind === "research" ? (!goalFile.trim() ? "Nhập đường dẫn file goal." : undefined) : verifyDraftProblem(checks);
     if (problem) { setError(problem); return; }
-    void patch({ isolatedBranches: kind !== "research" && isolated, branchFiles: branchFiles.split(/\r?\n/).map((path) => path.trim()).filter(Boolean), kind: kind === "chat" ? null : kind, ...(kind === "research" ? { goalFile: goalFile.trim() } : { verify: checks.map((check) => ({ ...check, id: check.id.trim(), command: check.command.trim() })) }) });
+    void patch({ isolatedBranches: kind !== "research" && isolated, branchFiles: branchFiles.split(/\r?\n/).map((path) => path.trim()).filter(Boolean), kind: kind === "chat" ? null : kind, ...(kind === "research" ? { goalFile: goalFile.trim() } : { verify: trimmedCommands(checks) }) });
   };
-  const changeCheck = (index: number, patch: Partial<VerifyCommand>) => setChecks((before) => before.map((check, n) => n === index ? { ...check, ...patch } : check));
   if (group.dm) return null;
   return <section className="room-workflow-settings" aria-label="Cài đặt workflow">
     <h3>Cài đặt room</h3>
@@ -65,18 +52,7 @@ export function RoomWorkflowSettings({ group }: { group: Group }) {
         <button type="button" className="workflow-approve" disabled={dirty || !group.goalFile} onClick={() => void patch({ researchGoalApprove: true })}>Duyệt file goal</button>
         {dirty && <p>Lưu cài đặt trước khi duyệt file goal.</p>}
       </> : <>
-        <div className="workflow-check-heading"><span>Verify · {checks.length}/8 lệnh</span><button type="button" disabled={checks.length >= 8} onClick={() => {
-          let n = checks.length + 1;
-          while (checks.some((check) => check.id === `check-${n}`)) n++;
-          setChecks([...checks, { id: `check-${n}`, command: "", timeoutSec: 120, expectExit: 0 }]);
-        }}><Plus size={14} />Thêm</button></div>
-        {!checks.length && <p>Chưa có lệnh kiểm tra do server chạy. Chỉ chạy khi bạn gửi goal.</p>}
-        {checks.map((check, index) => <div key={index} className="workflow-check">
-          <div><label>Id<input aria-label={`Id verify ${index + 1}`} maxLength={60} value={check.id} onChange={(e) => changeCheck(index, { id: e.target.value })} /></label><button type="button" aria-label={`Xoá verify ${index + 1}`} onClick={() => setChecks(checks.filter((_, n) => n !== index))}><Trash2 size={15} /></button></div>
-          <label>Lệnh<textarea aria-label={`Lệnh verify ${index + 1}`} maxLength={2000} rows={2} value={check.command} onChange={(e) => changeCheck(index, { command: e.target.value })} /></label>
-          <label>Thư mục con<input aria-label={`Thư mục verify ${index + 1}`} maxLength={200} value={check.cwd ?? ""} placeholder=". (thư mục room)" onChange={(e) => changeCheck(index, { cwd: e.target.value || undefined })} /></label>
-          <div><label>Timeout (giây)<input type="number" min={1} max={3600} value={check.timeoutSec ?? 600} onChange={(e) => changeCheck(index, { timeoutSec: e.target.valueAsNumber })} /></label><label>Mã thoát<input type="number" step={1} value={check.expectExit ?? 0} onChange={(e) => changeCheck(index, { expectExit: e.target.valueAsNumber })} /></label></div>
-        </div>)}
+        <VerifyCommandsEditor title="Verify" idPrefix="check" empty="Chưa có lệnh kiểm tra do server chạy. Chỉ chạy khi bạn gửi goal." checks={checks} onChange={setChecks} />
       </>}
       {kind !== "research" && <div className="workflow-branches">
         <label className="workflow-branch-toggle"><input type="checkbox" checked={isolated} onChange={(event) => setIsolated(event.target.checked)} />Branch riêng cho Worker</label>

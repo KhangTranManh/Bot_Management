@@ -36,15 +36,16 @@ it("keeps a server baseline before bot work, persists it on the card, and still 
     mkdirSync(work);
     writeFileSync(join(work, "setup.cjs"), 'require("node:fs").appendFileSync("order.txt", "setup\\n");');
     writeFileSync(join(work, "check.cjs"), 'const fs = require("node:fs"); fs.appendFileSync("order.txt", "verify\\n"); const n = fs.readFileSync("order.txt", "utf8").split("verify").length - 1; console.log(n === 1 ? "Existing failure before bot work" : "Repaired by synthetic check fixture"); process.exit(n === 1 ? 1 : 0);');
-    const profile = { instructions: "Follow AGENTS.md; use readable code", moduleMap: "src: inventory service", protectedPaths: ["vendor/"], setup: [{ id: "deps", command: "node setup.cjs" }] };
+    const profile = { template: "web", instructions: "Follow AGENTS.md; use readable code", moduleMap: "src: inventory service", protectedPaths: ["vendor/"], setup: [{ id: "deps", command: "node setup.cjs" }] };
     expect((await api("PATCH", `/api/groups/${room.id}`, { cwd: work, verify: [{ id: "tests", command: "node check.cjs" }], projectProfile: profile })).status).toBe(200);
     const persisted = (await api<{ groups: WireGroup[] }>("GET", "/api/bots?messages=0")).body.groups.find((group) => group.id === room.id)!;
-    expect(persisted.projectProfile).toMatchObject({ instructions: profile.instructions, protectedPaths: ["vendor"] });
+    expect(persisted.projectProfile).toMatchObject({ template: "web", instructions: profile.instructions, protectedPaths: ["vendor"] });
     const savedGroups = JSON.parse(readFileSync(join(dataDir, "groups.json"), "utf8")) as WireGroup[];
     expect(savedGroups.find((group) => group.id === room.id)?.projectProfile).toEqual(persisted.projectProfile);
-    for (const bad of [{ setup: [{ id: "deps", command: "node setup.cjs", cwd: "../outside" }] }, { protectedPaths: ["../outside"] }, { instructions: 4 }]) {
+    for (const bad of [{ template: "unknown" }, { setup: [{ id: "deps", command: "node setup.cjs", cwd: "../outside" }] }, { protectedPaths: ["../outside"] }, { instructions: 4 }]) {
       expect((await api("PATCH", `/api/groups/${room.id}`, { projectProfile: bad })).status).toBe(400);
     }
+    expect((await api<{ group: WireGroup }>("PATCH", `/api/groups/${room.id}`, {})).body.group.projectProfile).toEqual(persisted.projectProfile);
     expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "Repair this project", mode: "goal" })).status).toBe(202);
     await expect.poll(async () => (await card(room))?.status, { timeout: 20_000 }).toBe("completed");
     const completed = (await card(room))!;
@@ -53,6 +54,7 @@ it("keeps a server baseline before bot work, persists it on the card, and still 
     const instructions = `${JSON.stringify(dump.prompt)}\n${dump.systemPrompt}`;
     expect(instructions).toContain("tests: FAIL, exit 1");
     expect(instructions).toContain("src: inventory service");
+    expect(instructions).toContain("Project template: Web full-stack");
     expect(readFileSync(join(work, "order.txt"), "utf8")).toBe("setup\nverify\nverify\n");
     await control("wait", "--channel", room.id, "--task", room.threadId, "--timeout", "10");
     await control("messages", "--channel", room.id, "--task", room.threadId, "--limit", "30");
@@ -84,7 +86,7 @@ it("keeps a server baseline before bot work, persists it on the card, and still 
     expect(await card(missingFolder)).toMatchObject({ baseline: { checks: [{ id: "ready", exitCode: 0 }] } });
     expect((await api("PATCH", `/api/groups/${room.id}`, { projectProfile: null })).status).toBe(200);
     const cleared = (await api<{ groups: WireGroup[] }>("GET", "/api/bots?messages=0")).body.groups.find((group) => group.id === room.id)!;
-    expect(cleared.projectProfile).toBeUndefined();
+    expect(cleared.projectProfile).toBeNull();
     expect((await card(room))!.baseline).toEqual(completed.baseline);
   } finally {
     await fixture.close();

@@ -79,7 +79,7 @@ beforeAll(async () => {
         environment: {
           FAKE_CLAUDE_MODE: "happy",
           FAKE_CLAUDE_REPLIES: JSON.stringify([
-            'Plan.\n<openmaus-goal>{"status":"continue","detail":"Independent modules","brief":{"goal":"Build independent a.ts and b.ts"},"tasks":[{"id":"a","assignee":"Held worker","instruction":"Build a.ts","writes":["a.ts"]},{"id":"b","assignee":"Free worker","instruction":"Build b.ts","writes":["b.ts"]}]}</openmaus-goal>',
+            'Plan.\n<openmaus-goal>{"status":"continue","detail":"Independent modules","brief":{"goal":"Build independent a.ts and b.ts","structure":[{"name":"project","paths":["."],"owns":"the project"}]},"tasks":[{"id":"a","assignee":"Held worker","instruction":"Build a.ts","writes":["a.ts"]},{"id":"b","assignee":"Free worker","instruction":"Build b.ts","writes":["b.ts"]}]}</openmaus-goal>',
             'Reviewed.\n<openmaus-goal>{"status":"completed","detail":"Built, tested and reviewed."}</openmaus-goal>',
           ]),
           FAKE_CLAUDE_REPLY_STATE: join(home, "optimized-lead-replies.txt"),
@@ -106,7 +106,7 @@ beforeAll(async () => {
         environment: {
           FAKE_CLAUDE_MODE: "happy",
           FAKE_CLAUDE_REPLIES: JSON.stringify([
-            'Plan.\n<openmaus-goal>{"status":"continue","detail":"One module","brief":{"goal":"Build c.ts"},"tasks":[{"id":"c","assignee":"Block worker","instruction":"Build c.ts","writes":["c.ts"]}]}</openmaus-goal>',
+            'Plan.\n<openmaus-goal>{"status":"continue","detail":"One module","brief":{"goal":"Build c.ts","structure":[{"name":"project","paths":["."],"owns":"the project"}]},"tasks":[{"id":"c","assignee":"Block worker","instruction":"Build c.ts","writes":["c.ts"]}]}</openmaus-goal>',
             'Done.\n<openmaus-goal>{"status":"completed","detail":"Built and tested."}</openmaus-goal>',
             'Done.\n<openmaus-goal>{"status":"completed","detail":"Built; rounding is out of scope for this goal."}</openmaus-goal>',
           ]),
@@ -280,7 +280,7 @@ beforeAll(async () => {
         environment: {
           FAKE_CLAUDE_MODE: "happy",
           FAKE_CLAUDE_REPLIES: JSON.stringify([
-            "Builder takes the page.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"brief\":{\"goal\":\"Build the page\"},\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Role builder\",\"instruction\":\"Add the page\",\"writes\":[\"page.tsx\"]}]}</openmaus-goal>",
+            "Builder takes the page.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"brief\":{\"goal\":\"Build the page\",\"structure\":[{\"name\":\"project\",\"paths\":[\".\"],\"owns\":\"the project\"}]},\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Role builder\",\"instruction\":\"Add the page\",\"writes\":[\"page.tsx\"]}]}</openmaus-goal>",
             "Tested and done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"Page added and tested.\"}</openmaus-goal>",
           ]),
           FAKE_CLAUDE_REPLY_STATE: join(home, "role-lead-replies.txt"),
@@ -323,7 +323,7 @@ beforeAll(async () => {
         environment: {
           FAKE_CLAUDE_MODE: "happy",
           FAKE_CLAUDE_REPLIES: JSON.stringify([
-            "Maple builds.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"brief\":{\"goal\":\"Build the page\"},\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit maple\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
+            "Maple builds.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Plan\",\"brief\":{\"goal\":\"Build the page\",\"structure\":[{\"name\":\"project\",\"paths\":[\".\"],\"owns\":\"the project\"}]},\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit maple\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
             "Clover takes it.\n<openmaus-goal>{\"status\":\"continue\",\"detail\":\"Moved\",\"tasks\":[{\"id\":\"t1\",\"assignee\":\"Limit clover\",\"instruction\":\"Build the UI\",\"writes\":[\"ui.tsx\"]}]}</openmaus-goal>",
             "Done.\n<openmaus-goal>{\"status\":\"completed\",\"detail\":\"UI built by Clover.\"}</openmaus-goal>",
           ]),

@@ -1720,6 +1720,13 @@ describe("section Chiefs", () => {
     expect(reducer(state, { type: "groupPatched", group: announcement }).groups[0].section).toBeUndefined();
   });
 
+  it("drops a project profile the server sends as null and keeps it when a patch leaves it out", () => {
+    const group = { id: "group", threadId: "thread", name: "Review", memberIds: [], defaultResponder: { kind: "mentions" }, createdAt: 1, bulletin: "", messages: [], unread: false, projectProfile: { instructions: "Use pnpm" } } satisfies Group;
+    const state = { ...initialState, groups: [group] };
+    expect(reducer(state, { type: "groupPatched", group: { id: group.id, unread: true } }).groups[0].projectProfile).toEqual({ instructions: "Use pnpm" });
+    expect(reducer(state, { type: "groupPatched", group: { id: group.id, projectProfile: null } }).groups[0].projectProfile).toBeUndefined();
+  });
+
   it("hands off only within the patched bot's section", () => {
     const workChief = bot("work-a", "Work", true);
     const workCandidate = bot("work-b", "Work");

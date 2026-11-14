@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verifyDraftProblem } from "./RoomWorkflowSettings";
+import { verifyDraftProblem } from "./VerifyCommandsEditor";
 
 describe("verify editor", () => {
   it("accepts no checks, normal checks and nonzero expected exit codes", () => {

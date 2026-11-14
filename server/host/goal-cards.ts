@@ -8,6 +8,8 @@ import { buildNotification, type Notification } from "../notify.ts";
 import type { RoutineManager, RoutineRun } from "../routines.ts";
 import type { BotRecord, Message, Store } from "../store.ts";
 import type { GoalBranchCard } from "../../shared/goal-branches.ts";
+import type { GoalPlanSource } from "../../shared/room-plan.ts";
+import { safeRoomPlan } from "../room-plan.ts";
 import { conversationLanguage, serverLine, type ServerLineKey } from "../server-lines.ts";
 
 export interface LiveGoalRun {
@@ -21,6 +23,7 @@ export interface LiveGoalRun {
   startedAt: number;
   finished: boolean;
   brief?: GoalBrief;
+  planSource?: GoalPlanSource;
   baseline?: GoalBaseline;
   branches?: GoalBranchCard;
   conflicts?: GoalConflict[];
@@ -38,7 +41,10 @@ export interface GoalCardDeps {
 
 const safeBrief = (brief: GoalBrief): GoalBrief => {
   const clean = (entries: readonly string[]) => entries.map((entry) => redactSecretsInText(entry));
-  return { goal: redactSecretsInText(brief.goal), inScope: clean(brief.inScope), outOfScope: clean(brief.outOfScope), acceptance: clean(brief.acceptance), constraints: clean(brief.constraints), openQuestions: clean(brief.openQuestions) };
+  return {
+    goal: redactSecretsInText(brief.goal), inScope: clean(brief.inScope), outOfScope: clean(brief.outOfScope), acceptance: clean(brief.acceptance), constraints: clean(brief.constraints), openQuestions: clean(brief.openQuestions),
+    ...(brief.structure ? { structure: brief.structure.map((area) => ({ ...area, name: redactSecretsInText(area.name), paths: clean(area.paths), owns: redactSecretsInText(area.owns) })) } : {}),
+  };
 };
 
 function detailFields(detail: string, text?: ServerText) {
@@ -119,6 +125,7 @@ export function createGoalCards(deps: GoalCardDeps) {
       startedAt: run.startedAt,
       finishedAt,
       ...(run.brief ? { brief: safeBrief(run.brief) } : {}),
+      ...(run.planSource ? { planSource: run.planSource } : {}),
       ...(run.baseline ? { baseline: run.baseline } : {}),
       ...(run.branches ? { branches: run.branches } : {}),
       ...(run.conflicts?.length ? { conflicts: run.conflicts } : {}),
@@ -178,6 +185,8 @@ export function createGoalCards(deps: GoalCardDeps) {
         ...fields,
         startedAt: run.startedAt,
         ...(run.brief ? { brief: safeBrief(run.brief) } : {}),
+        ...(run.planSource ? { planSource: run.planSource } : {}),
+      ...(run.planSource ? { planSource: run.planSource } : {}),
         ...(run.baseline ? { baseline: run.baseline } : {}),
         ...(run.branches ? { branches: run.branches } : {}),
         ...(run.conflicts?.length ? { conflicts: run.conflicts } : {}),
@@ -190,6 +199,13 @@ export function createGoalCards(deps: GoalCardDeps) {
     run.brief = value;
     const current = store.messagesFor(threadId).find((message: Message) => message.id === run.cardMessageId)?.goalRun;
     if (current) store.patchMessage(threadId, run.cardMessageId, { goalRun: { ...current, brief: safeBrief(value) } });
+  }
+
+  function planSource(threadId: string, run: LiveGoalRun | undefined, value: GoalPlanSource): void {
+    if (!run || run.finished) return;
+    run.planSource = { ...value, draft: safeRoomPlan(value.draft), ...(value.changeReason ? { changeReason: redactSecretsInText(value.changeReason) } : {}) };
+    const current = store.messagesFor(threadId).find((message: Message) => message.id === run.cardMessageId)?.goalRun;
+    if (current) store.patchMessage(threadId, run.cardMessageId, { goalRun: { ...current, planSource: run.planSource } });
   }
 
   function conflict(threadId: string, run: LiveGoalRun | undefined, value: GoalConflict): void {
@@ -215,7 +231,7 @@ export function createGoalCards(deps: GoalCardDeps) {
     if (current) store.patchMessage(threadId, run.cardMessageId, { goalRun: { ...current, branches: run.branches } });
   }
 
-  return { start, finish, progress, brief, conflict, baseline, branches };
+  return { start, finish, progress, brief, planSource, conflict, baseline, branches };
 }
 
 export type GoalCards = ReturnType<typeof createGoalCards>;

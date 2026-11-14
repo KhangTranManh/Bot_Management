@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { checkedProjectProfile, goalCheckResult, projectContext } from "./room-project.ts";
+import { PROJECT_TEMPLATES } from "../shared/project-template.ts";
 
 describe("room project profiles", () => {
+  it.each(PROJECT_TEMPLATES)("keeps the $id template and supplies its guidance without adding commands", ({ id }) => {
+    const profile = checkedProjectProfile({ template: id });
+    expect(profile).toEqual({ template: id });
+    const context = projectContext(profile, [], { startedAt: 1, finishedAt: 2, setup: [], checks: [] });
+    expect(context).toContain("Project template:");
+    expect(context).toContain("Suggested areas:");
+    expect(context).toContain("baseline is unverified");
+    expect(context).not.toContain("Room completion commands:");
+  });
   it("bounds project context and validates setup as server commands", () => {
     expect(checkedProjectProfile({ instructions: " Follow AGENTS.md ", moduleMap: " src: app ", protectedPaths: ["./vendor/", "db\\migrations"], setup: [{ id: "deps", command: "npm ci", timeoutSec: 60 }] }))
       .toEqual({ instructions: "Follow AGENTS.md", moduleMap: "src: app", protectedPaths: ["vendor", "db/migrations"], setup: [{ id: "deps", command: "npm ci", timeoutSec: 60 }] });
@@ -10,6 +20,7 @@ describe("room project profiles", () => {
 
   it.each([
     null, [], "project", { instructions: 1 }, { moduleMap: "x".repeat(4001) }, { unknown: true },
+    { template: "unknown" }, { template: null }, { template: 3 }, { template: {} },
     { protectedPaths: ["../secret"] }, { protectedPaths: ["/etc"] }, { protectedPaths: ["C:\\private"] }, { protectedPaths: ["./"] },
     { protectedPaths: [false] }, { protectedPaths: Array(17).fill("vendor") },
     { setup: [] }, { setup: [{ id: "deps", command: "npm ci", cwd: "../outside" }] },

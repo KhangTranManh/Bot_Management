@@ -72,6 +72,7 @@ export interface ChannelRouteDeps {
   readCursor(threadId: string): { lastReadMessageId?: string };
   /** A person opened this room (a Team Cloud's Needs you lines for them there are done). */
   threadRead?(auth: RequestAuth, threadId: string): void;
+  threadVisible?(auth: RequestAuth, threadId: string): boolean;
   /** A Team Cloud: marks the room read or unread for this person alone and answers the room as they see it; null where a
    * room is read once for everyone. */
   personMarkRoom?(auth: RequestAuth, room: GroupRecord, unread: boolean): WireGroup | null;
@@ -339,7 +340,7 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
       if (!group) return json(res, 404, { error: "no such group" });
       const threadId = url.searchParams.get("threadId") ?? group.threadId;
       const owns = group.dm ? group.threadId === threadId : Boolean(store.groupTaskByThread(group.id, threadId));
-      if (!owns) return json(res, 404, { error: "no such thread in channel" });
+      if (!owns || deps.threadVisible?.(auth, threadId) === false) return json(res, 404, { error: "no such thread in channel" });
       return json(res, 200, { members: roomNowFor(group, threadId) });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)\/messages$/);

@@ -911,6 +911,58 @@ Quota (`/api/plan-usage`, trước 14:42:42 → sau 14:55:50 UTC):
 - Bằng chứng rút gọn: [`docs/verification/evidence/inventory-branches-live.json`](docs/verification/evidence/inventory-branches-live.json).
   Report, transcript, usage, plan trước/sau và source runner đầy đủ nằm trong fixture, không đưa dữ liệu phiên vào git.
 
+### 12.11 Teamboard (kanban web) với branch mode + hồ sơ dự án, đội Opus/Terra/Sonnet/Sol (2026-11-13)
+Đề: `D:	estproject` (`SPEC.md` 6 màn hình + API + SQLite, `tests/acceptance.test.mjs` 11 test, đã kiểm trước trên một server
+tham chiếu ngoài dự án). Đội: Lead Opus 5.5 (Claude Pro), Worker GPT-6.1 Terra ×2 (Plus 1, Plus 2), Tester GPT-6.1 Sol (Plus 1),
+Reviewer Sonnet 5.5 (Claude Pro). Branch mode bật; hồ sơ dự án có playbook frontend, khoá SPEC/test, setup `npm install`;
+verify `npm run build` + `npm test`. Server thử cách ly port 8971, dữ liệu `D:/OMB-trial/kanban-20261113`.
+- Lần 1 `blocked` sau 40 giây: setup `npm install` tạo `package-lock.json` chưa commit trong worktree tích hợp, nên lúc mở task
+  đầu server thấy worktree bẩn. Lead đã tốn 1 lượt (144 nghìn token). Repo cần lockfile đã commit; app nên kiểm worktree sạch ngay
+  sau setup và nêu tên file (chưa sửa).
+- Lần 2 **completed sau 15,5 phút, 10/13 lượt**: build 0, test 11/11, Tester PASS, Reviewer CLEAR, 5 task merge vào integration,
+  0 conflict, 0 sửa ngoài `writes`. Branch còn `pending` để người dùng tự merge.
+- Token: tổng 4,33 triệu (cache 3,70 triệu). Lead 0,57 triệu/5 lượt, Terra 1 0,42 triệu, Terra 2 0,94 triệu, Tester 1,23 triệu,
+  Reviewer 1,18 triệu. Quota: Claude 5 giờ 37% → 63% (+26, gồm cả phiên điều phối), tuần 20 → 22; Plus 1 5 giờ 0 → 9, tuần 0 → 1;
+  Plus 2 5 giờ 2 → 6, tuần 85 → 85.
+- UI (ảnh `shots/`): đủ 6 màn hình, 1366/390px không tràn ngang, console sạch; giao diện gọn, trung tính, ít điểm nhấn.
+- **Chất lượng code kém dù test qua**: toàn app khoảng 42 KB, viết dồn thành dòng rất dài (`Board.jsx` 11 dòng, dòng dài nhất
+  hơn 5.600 ký tự), frontend ghi qua lệnh PowerShell một dòng. Reviewer vẫn CLEAR. Cần luật đọc được (độ dài dòng/file, không
+  minify mã nguồn) trong hồ sơ dự án hoặc checklist review, và một lệnh verify kiểm điều đó.
+- Lỗi UI phát hiện khi xem trực tiếp: phiên client (mã ghép nối `--client`) bị 403 ở `GET /api/groups/<id>/now`, nên Văn phòng
+  và trạng thái team không cập nhật. Đã sửa trong code (chưa commit): mở route cho client, kiểm quyền xem thread.
+
+### 12.12 Đọc CAPTCHA bằng CRNN + CTC trên GPU của VPS, đội Sonnet + Gemini Flash (2026-11-14)
+Đề: `D:\testproject\train model\TASK.md` (bộ ảnh Multi Color Text Captcha 11.050 ảnh; đường dẫn CSV khác hoa/thường so với zip;
+huấn luyện trên GPU VPS qua SSH, thông tin đăng nhập trong `vps.txt`). Đội: Lead, Worker, Tester Sonnet 5.5; Reviewer Gemini 3.8
+Flash (high) qua Antigravity. Không bật branch mode; mẫu ML. Server thử cách ly port 8981, dữ liệu
+`D:/OMB-trial/captcha-netflix-20261114`.
+- `/plan` ra phác thảo hợp lệ; lần đầu bị server trả vì hai vùng chồng đường dẫn, Lead sửa ở lần thử lại. Goal đọc đúng phác thảo,
+  xoá câu hỏi mở đã được trả lời và ghi lý do trên thẻ (`planSource`).
+- Lần 1 dừng ở **giới hạn 13 lượt** (`limit-reached`), chưa hoàn tất: huấn luyện chạy được trên GPU (A16), kết quả test
+  **exact-match 0,8498 trên 1.105 ảnh**, độ chính xác ký tự 0,9719, edit distance trung bình 0,168; còn thiếu tài liệu, checkpoint
+  smoke cũ và kết quả mới chỉ nằm trên VPS. Nguyên nhân chính: nhiều lượt tốn vào chờ huấn luyện.
+- Gửi tiếp: tin đầu gửi nhầm ở chế độ chat nên Lead vẫn điều phối Worker ngoài giới hạn lượt của goal; bản gửi lại ở chế độ goal chỉ
+  dừng `needs-input` vì phác thảo còn câu hỏi mở chưa được trả lời. Phần việc còn lại xong: sao chép `runs/`, viết `report.md`,
+  `README.md`, `requirements.txt`, `.gitignore`.
+- Reviewer (Gemini Flash) chạy hai lần như tư vấn và một lần cuối kiểm `report.md` với `metrics.json`/`log.csv`/`config.json`:
+  mọi số khớp, README khớp tham số script, không lộ thông tin VPS trong file. Cả ba lần đều CLEAR, chỉ có ghi chú mức `note`
+  (ví dụ thiếu `.gitignore`); chưa từng tìm ra lỗi thật nên chất lượng review chưa được chứng minh.
+- Mật khẩu VPS bị hai thành viên in ra console dù luật cấm; quét không thấy trong file dự án hay lịch sử phòng. VPS tạm nên bỏ qua.
+
+### 12.13 Streamflix (web kiểu Netflix) với branch mode, Lead Opus + Worker Sonnet ×2 + Gemini Flash (2026-11-14)
+Đề: `D:\testproject\Netflix\SPEC.md` (React + Vite, Express, SQLite; 7 màn hình, API, 10 tiêu chí). Đội: Lead Opus 5.5,
+Worker 1 và 2, Tester Sonnet 5.5, Reviewer Gemini 3.8 Flash (high). Branch mode bật, mẫu Web, verify `npm run build`,
+`npm test`, `check-code-shape.ts`. `/plan` ra 5 vùng (tooling, db, backend, frontend, tests) và 6 wave.
+- Ba lần khởi động đầu chặn trước khi làm việc, đều do cấu hình phòng của tôi, không phải model:
+  1. setup `npm install` chạy trên repo chưa có `package.json` → `enoent`, goal `blocked`;
+  2. lần chạy hỏng để lại `package-lock.json` rỗng trong worktree tích hợp → "worktree có thay đổi chưa commit" (lặp lại §12.11);
+  3. dừng `needs-input` sau khi đã dựng xong app: luật "`tests/` chỉ đọc cho Worker" mâu thuẫn với vai Tester (không ghi được
+     file), nên không ai được viết test. Lead tự phát hiện và hỏi thay vì bịa. Sau khi cho Worker 2 viết `tests/` một lần thì xong.
+- Kết quả: **completed**. Tôi tự chạy lại trong worktree tích hợp: `npm test` **49/49**, `npm run build` qua, `check-code-shape`
+  `code shape ok`, worktree sạch, 8 file test (auth, profiles, kids, home, browse, my-list, progress). Tester PASS, Reviewer CLEAR.
+- Chưa kiểm: tiêu chí 9 (1366/390px, không lỗi console) vì đội không có trình duyệt; chưa đọc nội dung test; nhánh tích hợp chưa
+  merge vào `D:\testproject\Netflix`; chưa đo token/quota.
+
 ## 13. Branch riêng cho từng Worker, hợp đồng vai, đội theo quota — thiết kế và triển khai
 
 ### 13.1 Vì sao
@@ -1142,7 +1194,7 @@ Hiện có (đọc code 2026-11-11):
    Tester, Reviewer nhận hồ sơ + baseline. Cổng verify cuối không bỏ qua lỗi có sẵn. Stop huỷ cả cây tiến trình lệnh.
    Không có hồ sơ → verify chỉ chạy cuối như trước. Chưa cấu hình verify → ghi rõ baseline chưa kiểm chứng.
    `protectedPaths` là chỉ dẫn MỀM, chưa sandbox; chỉ dẫn repo là tham chiếu, không tự đọc file; chưa tự khám phá lệnh,
-   chưa có UI hồ sơ/baseline, chưa tách lệnh test liên quan mỗi vòng với bộ đầy đủ cuối goal.
+   UI hồ sơ/baseline đã có (2026-11-12, xem dưới bước 6), chưa tách lệnh test liên quan mỗi vòng với bộ đầy đủ cuối goal.
    Cách cấu hình và fixture cách ly: [`docs/verification/room-project.md`](docs/verification/room-project.md).
    Kiểm chứng: bộ hồi quy 16 file — 359 test qua, 1 bỏ qua; sau tách module và sửa phục hồi thư mục, các test liên quan
    chạy lại đều qua. `room-coordination.e2e` 33/33, `runtime-coordinator` 109/109; typecheck, lint và kiểm tài liệu sạch.
@@ -1162,8 +1214,106 @@ Hiện có (đọc code 2026-11-11):
    `.omb-scratch/verify-evidence/goal-branches/`; recipe và giới hạn tại `docs/verification/goal-branches.md`.
 6. Skill (review, viết test, nhận dự án có sẵn, viết đặc tả) và MCP (trình duyệt; tuỳ chọn sơ đồ code).
 
+**UI Neon cho bước 2–4 (2026-11-12, chưa commit):** panel goal hiện brief (câu hỏi mở đầu tiên), trạng thái gốc
+(từng lệnh setup/verify, mã thoát, output) và conflict giữa Worker; card đếm câu hỏi mở, conflict, lệnh gốc lỗi.
+Room panel có trình sửa hồ sơ dự án (chỉ dẫn, sơ đồ module, đường dẫn giữ nguyên, setup) dùng chung trình sửa lệnh
+với verify. Server luôn gửi `projectProfile` (null khi đã xoá) để client không giữ bản cũ. Kiểm chứng:
+`scripts/testing/verify-goal-record.ts` trên fixture cách ly (lưu/xoá hồ sơ qua UI, goal có brief + baseline chạy
+thật, 1366/390px không tràn, console sạch); conflict chỉ kiểm bằng test DOM vì fake engine không phát tool sửa file.
+Xem [`docs/verification/goal-record.md`](docs/verification/goal-record.md).
+
+**Tách file vượt ngưỡng (2026-11-12, chưa commit):** theo `server/host/README.md`, chỉ di chuyển, không đổi hành vi
+(thân hàm giống hệt, đã so bằng máy; riêng `routines!` thành getter `routines()!` theo luật 5).
+`server/index.ts` 16.189 → 15.551 dòng: vòng goal của room (lane, wave tree, goal step, branch runs, goal operation)
+sang `server/host/goal-operations.ts`; PATCH room (`updateChannel` + `checkedTeamRoles`) sang
+`server/host/channel-update.ts`; kiểu lượt room dùng chung sang `server/host/group-turn-types.ts`.
+`shared/wire.ts` 1.049 → 993: `VerifyCommand`/`RoomProjectProfile` sang `shared/room-workflow.ts`, kiểu hàng đợi/giữ
+tin room sang `shared/room-queue.ts` (wire.ts re-export, không đổi import nơi khác). `GroupView.tsx` 1.244 → 886:
+`RoomSetup` sang `src/components/RoomSetup.tsx`. Test ratchet kích thước file và route xanh lại, không nâng ngưỡng.
+
 ### 14.6 Cần quyết
 1. **Đã chốt 2026-11-11:** chỉ dừng khi brief có câu hỏi mở; không thêm bước duyệt.
 2. **Đã chốt 2026-11-11:** không đổi UI. `/goal` trong ô nhập chỉ chuyển chế độ, vẫn cần chữ; gõ ngắn ("làm theo những gì vừa
    chốt") là đủ, brief của Lead giữ phần đã bàn.
-3. Skill/MCP: dùng playbook có sẵn trong app, hay người dùng tự thêm MCP (ví dụ trình duyệt)?
+3. **Đã chốt 2026-11-13:** playbook theo vai do app gửi (giống nhau mọi hãng), không dùng skill riêng của engine; MCP trình
+   duyệt chỉ bật theo room khi cần. Chi tiết ở §15.
+
+## 15. Lead phác thảo cấu trúc trước, chia vùng, playbook theo vai, `/plan` — kế hoạch (2026-11-13)
+
+Nguồn: lần thử Teamboard (§12.11) cho code chạy được nhưng dồn dòng, không chia tầng rõ; Reviewer vẫn CLEAR. Người dùng
+muốn Lead phác thảo kế hoạch và cấu trúc rõ trước, chia front/back/DB, và áp được cho dự án khác (train model, research).
+
+### 15.1 Cấu trúc (`structure`) là luật chung, không cố định tầng
+- Brief trong plan đầu có `structure`: danh sách **vùng** do Lead đặt tên, mỗi vùng `{name, paths, owns, readOnly?}`.
+  Server không biết "frontend" hay "dataset"; chỉ kiểm vùng, đường dẫn, quyền ghi.
+- Luật server kiểm: tên vùng không trùng; đường dẫn tương đối trong dự án (`.` là cả dự án); hai vùng không chung đường dẫn;
+  **mỗi task của Worker ghi trong đúng một vùng**; không task nào ghi vào vùng `readOnly`; ghi ra ngoài mọi vùng bị trả lại.
+- Thiếu hoặc sai `structure` → plan bị trả lại **một lần**, kèm lý do cụ thể; lần sau vẫn thiếu thì chạy tiếp không có
+  cấu trúc (giống brief). Không tốn lượt riêng: cấu trúc đi cùng plan đầu.
+- Cấu trúc lưu trên thẻ goal (che bí mật), hiện ở panel goal, gửi kèm mọi task Worker/Tester/Reviewer và mọi lượt Lead.
+- Lead được dặn: khi Tester, Reviewer hoặc lệnh verify báo sai vùng hay khó đọc, giao task tách lại code cho Worker sở hữu
+  vùng đó, ghi rõ tách file nào thành file nào; không tự thêm task refactor khi không có báo cáo.
+
+### 15.2 Mẫu theo loại dự án (gợi ý cho Lead, đặt trong hồ sơ dự án)
+| Loại | Vùng gợi ý | Verify riêng |
+|---|---|---|
+| Web full-stack | db · backend · frontend · tests (chỉ đọc) | build, test, script ranh giới import + độ dài dòng/file |
+| Train model | data · model · training · eval (chỉ đọc) · experiments | train thử 1 epoch dữ liệu nhỏ, config hợp lệ, eval chạy, seed cố định |
+| Research | data/heldout (chỉ đọc) · src · runs · report | luật §8 có sẵn + ranh giới vùng |
+| Thư viện / CLI | src · tests · docs | build, test, lint, API công khai không đổi |
+ML/research thường chạy tuần tự (data → train → eval): Lead giao theo wave; vùng chỉ đọc chặn ghi vào eval/held-out ngay
+từ plan, audit `writes` bắt nếu vẫn ghi lén.
+
+### 15.3 Playbook theo vai do app gửi (bộ skill đầu tiên)
+Đặt trong repo (`server/playbooks/`), server ghép vào lời dặn theo vai; ngắn để đỡ token. Luật cứng vẫn do server kiểm.
+- **Lead** (~40 dòng): phác thảo cấu trúc trước khi giao việc; mỗi task một vùng; mỗi vùng một Worker khi được; tuần tự
+  khi có phụ thuộc; phân phối lại code khi có báo cáo; chọn mẫu dự án từ hồ sơ.
+- **Worker** (~20): chỉ ghi trong vùng được giao; dòng ≤ 120, file ≤ 300, mỗi file một việc; sửa file bằng công cụ sửa
+  file, không ghi code qua lệnh shell một dòng; tự chạy build/test và nói kết quả.
+- **Tester** (~15): đọc kết quả verify của server trước; kiểm từng tiêu chí nghiệm thu; định dạng `FAIL`/`VERDICT`.
+- **Reviewer** (~20): checklist đúng brief, đúng vùng, lỗi biên, bảo mật, test kiểm hành vi thật, code đọc được;
+  định dạng `FINDING`/`REVIEW`.
+- **Mẫu dự án**: Web, ML training, Research, Thư viện/CLI (~10 dòng mỗi mẫu); ô chọn mẫu trong hồ sơ dự án.
+
+### 15.4 `/plan`: phác thảo trước, goal dùng đúng bản đã chốt
+- Bàn trong chat: Lead trả lời phác thảo theo playbook Lead; chỉ để trao đổi.
+- `/plan`: Lead viết brief + `structure` + thứ tự wave, **không giao việc**; server kiểm rồi lưu thành thẻ "Bản phác thảo";
+  góp ý tiếp thì Lead ra bản mới; nút "Lưu vào hồ sơ dự án" để dùng cho goal sau.
+- `/goal`, `/research`: có bản phác thảo mới nhất (hoặc cấu trúc trong hồ sơ dự án) → server gửi cho Lead, plan đầu phải
+  theo nó, đổi thì ghi lý do và hiện trên thẻ; chưa có → Lead phác thảo trong plan đầu. Server đọc từ thẻ, không từ lịch
+  sử chat, nên bàn dài (quá 30 tin) vẫn dùng đúng bản đã chốt. `/plan` là tuỳ chọn; `/goal` thẳng vẫn chạy luôn.
+
+### 15.5 Thứ tự (làm và kiểm từng bước)
+1. **ĐÃ LÀM (2026-11-13, chưa commit)** — `structure` chung và luật mỗi task một vùng: `GoalArea` trong
+   `shared/group-goal-run.ts`, `server/goal-structure.ts` (đọc, kiểm chồng vùng, kiểm task), brief đọc/che bí mật/hiện
+   cấu trúc, vòng goal trả lại plan thiếu hoặc sai cấu trúc một lần và gửi cấu trúc kèm mọi task, lời dặn Lead (phác thảo
+   trước, phân phối lại code), panel goal mục "Cấu trúc". Kiểm: `goal-structure` 5 test, vòng goal 88 test (3 test mới),
+   goal-cards, DOM panel, e2e goal/branch/room-project 23 test; browser `verify-goal-record.ts` (cấu trúc 2 vùng, một vùng
+   chỉ đọc, 1366/390 không tràn, console sạch). Typecheck, lint sạch.
+2. **ĐÃ LÀM (2026-11-13, chưa commit)** — playbook Lead/Worker/Tester/Reviewer tại `server/playbooks/roles.ts`,
+   gửi qua đường điều phối goal và luật vai dùng chung (gồm task runtime và task sửa conflict branch). Bốn mẫu Web,
+   ML training, Research, Thư viện/CLI tại `server/playbooks/projects.ts`; `projectProfile.template` lưu qua API/disk,
+   ô chọn mẫu trong hồ sơ dự án, kèm hướng dẫn mẫu vào mọi lượt/task có hồ sơ. Mẫu chỉ gợi ý, không tạo file hay lệnh
+   verify. Bỏ mẫu giữ các trường khác; xoá hồ sơ xoá cả mẫu. Playbook là luật MỀM, không thay các cổng kiểm server.
+   Kiểm: 142 test tập trung + tài liệu/ratchet, 23 E2E goal/branch/room-project; typecheck và lint sạch. Browser fixture
+   `verify-goal-record.ts`: lưu/mở lại/bỏ mẫu/xoá hồ sơ, xác nhận template + playbook Lead tới engine, 1366/390 không
+   tràn, console sạch. Chưa chứng minh model thật tuân thủ playbook; lần chạy Teamboard ở bước 5 còn chờ.
+3. **ĐÃ LÀM phía server + thẻ (2026-11-14, chưa commit)** — `/plan` trong room (`server/host/room-plans.ts`): Lead viết brief + `structure` +
+   `waves` trong envelope riêng, server kiểm (`checkedRoomPlan`: không trường lạ như `tasks`, wave chỉ nêu vùng có trong
+   structure), sai thì trả lại một lần rồi báo lỗi trên thẻ; thẻ `room.plan` (`RoomPlanCard.tsx`) hiện cấu trúc, wave, câu hỏi
+   mở và nút "Lưu vào hồ sơ dự án" (PATCH `projectProfile.plan`; lưu cài đặt hồ sơ không làm mất `plan`). Goal đọc từ thẻ mới
+   nhất của thread (không từ lịch sử chat), sau đó từ hồ sơ: Lead nhận outline; plan đầu bỏ brief thì dùng brief đã chốt, đổi
+   brief mà thiếu `planChangeReason` thì bị trả một lần, lý do lưu trên thẻ goal (`goalRun.planSource`). Kiểm: group-goal-run
+   91 test (3 mới), e2e `server/room-plan.e2e.test.ts`. Panel goal hiện outline và lý do đổi brief; unit `room-plan.test.ts`;
+   browser `verify-room-plan.ts` (thẻ, 1366/390 không tràn, lưu hồ sơ, console sạch). Chưa làm: `/research` kiểm riêng, model thật.
+4. **ĐÃ LÀM (2026-11-14, chưa commit)** — `scripts/testing/check-code-shape.ts` (dòng, file, import chéo thư mục cấm) + 3 test. Chạy trên
+   branch integration của §12.11: fail đúng, 11 file có dòng dài hơn 120 ký tự (`Workspaces.jsx` 430, `client.js` 256, `main.jsx` 241).
+5. **ĐÃ LÀM (2026-11-14)** — chạy `/plan` → `/goal` với model thật trên app xem phim kiểu Netflix thay cho Teamboard: §12.13.
+   Hoàn tất, build/test/shape qua; ba lần khởi động đầu bị chặn vì cấu hình phòng và lỗi dọn dẹp, không phải model.
+6. **ĐÃ LÀM (2026-11-14)** — bài ML nhỏ (đọc CAPTCHA bằng CRNN+CTC trên GPU của VPS) để thử mẫu ML: §12.12.
+7. Việc còn lại rút ra từ hai lần chạy:
+   - Setup lỗi hoặc ghi file (lockfile) phải tự dọn hoặc báo rõ, vì goal sau bị chặn "worktree bẩn" (lặp lại §12.11, chưa sửa).
+   - Cảnh báo lúc cài phòng khi luật dự án mâu thuẫn với vai (Tester không ghi được file nhưng `tests/` cấm Worker).
+   - Lead chạy việc dài (huấn luyện) ở chế độ tách rời ngay từ lượt đầu để không tốn lượt chờ.
+   - Thử Reviewer bằng lỗi cài sẵn; hai lần chạy chưa lần nào nó tìm ra lỗi thật.
+   - Chưa đo token/quota, chưa kiểm 1366/390px cho Netflix (đội không có trình duyệt).
