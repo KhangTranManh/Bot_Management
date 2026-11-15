@@ -26,7 +26,7 @@ export type Skin = {
 };
 
 export const SKINS: readonly Skin[] = [
-  { id: "neon", name: "Neon Office", tagline: "A night office. Neon marks the work." },
+  { id: "neon", name: "Neon", tagline: "A night office. Neon marks the work." },
   { id: "midnight", name: "Midnight", tagline: "The original. Cool and dark." },
   { id: "atelier", name: "Atelier", tagline: "Daylight on paper, warm and quiet." },
   { id: "foundry", name: "Foundry", tagline: "Night shift. Dark, warm, lit in brass." },

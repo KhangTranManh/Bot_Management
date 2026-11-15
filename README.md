@@ -4,7 +4,7 @@
 
 **A team of AI bots in one chat app, run as a real team: a Lead that plans, Workers that build in parallel, a Tester that signs off.**
 
-Built on [OpenMausBot](https://github.com/KhangTranManh/Bot_Management) · local-first · bring your own agents
+Forked from [OpenMausBot](https://github.com/milind-soni/OpenMausBot) · local-first · bring your own agents
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
@@ -24,16 +24,6 @@ work as a team on one goal.
 
 This repository is a fork of OpenMausBot that focuses on **how that team works together**: who plans, who builds,
 who checks, what happens when you interrupt, and how you see what everyone is doing.
-
-<p align="center">
-  <img src="docs/images/neon-office.gif" alt="The team office: rooms as isometric platforms around the Chief of Staff, each bot at a desk with its state, hand-offs travelling between bots, and a side rail of running goals, things waiting for you, the selected bot and recent events." width="880">
-</p>
-<p align="center"><sub>The <a href="designs/neon-office/README.md">Neon Office</a> design reference — a preview with sample data. The app's Office uses available room data from the existing API.</sub></p>
-
-The approved UI definitions cover the Office, sidebar, room settings, goal plan/checks/usage panel, research approval
-and skin picker. Neon will be the default dark skin; existing skins stay available, and the Office gets its own sidebar
-entry. The frontend implementation keeps backend code and database schemas unchanged. See the
-[design index](designs/neon-office/README.md) and [`NOTE.md`](NOTE.md) §10.5–10.8 for scope and remaining data requirements.
 
 ## What's new in this fork
 
@@ -79,12 +69,6 @@ now: `PATCH /api/groups/:id` with `goalFile`, then `researchGoalApprove: true`, 
 
 ### Seeing what is happening
 
-- **Office** in the sidebar: live room status, current goals, pending cards, selected bot and recent activity. It polls
-  the existing room `/now` route while visible. Seats follow the roles (Lead, then Workers, then Tester/Reviewer) and
-  dashed links draw the team workflow above: Chief → Lead, Lead → each Worker, each Worker → Tester/Reviewer. While a
-  goal runs, a beam labelled with the task goes from the Lead to each member running a job; real queue waits are blue.
-  On narrow screens it becomes a room list. New installs use the Neon
-  skin and a 240px sidebar; saved skins and sidebar widths are preserved. Choose **Neon Office** in Appearance to switch.
 - **Room workflow settings**: edit room kind and verify commands, select a research goal file and approve its hash
   using the existing group PATCH route. The server retains validation and approval authority.
 - **Project profile** in the room panel: project template, instructions, module map, paths to leave alone and setup commands for goals
@@ -134,15 +118,23 @@ and [`NOTE.md`](NOTE.md) §12 for per-role numbers.
   numbers are honest.
 - The held-out scan sees only tool calls the engine reports; reading a path through another route goes unseen.
 - The 13-turn goal limit pauses a run without a hand-off summary; sending the goal again restarts the count.
-- Office uses the room snapshots and history already loaded by the app; the pending-card count is limited to that
-  history. Office beams run from the Lead to members working during a goal, not from per-task hand-off records;
-  detailed task dependencies, research ledger charts and per-run/per-role usage are not exposed by the current API. The goal panel labels thread totals separately instead of treating them as run totals.
+- Detailed task dependencies, research ledger charts and per-run/per-role usage are not exposed by the current API. The goal panel labels thread totals separately instead of treating them as run totals.
 - There is no automatic rotation across engine accounts when usage runs out. An explicitly configured backup AI
   keeps its existing recovery behavior; otherwise the Lead needs another available member of the same role.
 - A Worker that edits a file another Worker's task declared is caught while the wave runs: the room shows it at once,
   its running turn is told to stop when its engine takes words mid-turn (Claude, Codex; not Grok, Antigravity,
   OpenCode, ZCode or other ACP engines), and the Lead evaluates it after the wave. Only edit tool calls are attributed;
   a file written by a shell command is seen by the writes audit after the wave, not by the Worker who wrote it.
+
+### Changes from upstream
+
+This fork runs on its own and does not talk to the upstream project's services.
+
+- **Desktop auto-update is gone.** No update check or installer hand-off is wired; build and install new versions yourself. The renderer's update screens stay in the code but never appear.
+- **Upstream services are off or removed.** Analytics, bug reports, the team library and Composio are off by default, and the enterprise layer, connector, Cloudflare control plane and broker, docs site and release workflows are deleted. Anything that depended on them (My Cloud and Team Cloud plans, hosted connectors) is not supported here.
+- **Container images** are published to `ghcr.io/khangtranmanh/bot_management` by `.github/workflows/docker.yml`; the image exists after the first push or `v*` tag.
+- **Confirm a stopped goal.** A goal that ended waiting for you (needs input, paused or out of turns) shows **Xác nhận xong** in its goal panel, which marks the goal completed. Only the owner or an admin can use it, never a bot.
+- **The Office page is removed.** Rooms, goals and team status are in the room panel and the goal panel.
 
 ### Engines and fixes
 
@@ -220,9 +212,9 @@ flowchart LR
 | App | `src/` | Chat shell, room panel, goal panel, composer commands |
 | Desktop | `electron/` | macOS, Windows and Ubuntu shells with an embedded harness |
 
-Other capabilities inherited from OpenMausBot — approval cards, cloud and local computers, connected apps,
-voice and calls, triggers and webhooks, the MCP server and the `openmausbot` CLI — work as documented in
-[`docs/`](docs/).
+Other capabilities inherited from OpenMausBot — approval cards, local computers and your own VPS, voice and calls,
+triggers and webhooks, the MCP server and the `openmausbot` CLI — are documented in [`docs/`](docs/). Docs for
+features listed under *Changes from upstream* describe upstream, not this fork.
 
 ## Development
 
@@ -237,8 +229,11 @@ Before claiming a server or conversation change works, follow
 [`docs/verification/README.md`](docs/verification/README.md): verify against an isolated fixture, never your live
 data. Code conventions are in [`AGENTS.md`](AGENTS.md).
 
-Known test caveat on Windows: `shared/app-frame/helper.test.ts` is timing-sensitive and can fail intermittently;
-it fails the same way on the upstream base.
+Known test failures: a full `pnpm test` is not green. Some tests are out of date with the Neon skin (`bot-identity`,
+`fonts`, `type-scale`, `SettingsModal.simple`, `Sidebar.simple-layout`), some fail on Windows or without network
+(`lending-memory`, `mcp-remote-proxy`, `local-computer-proxy`, `cloud-computer-background`), and a few were already
+failing before this fork's cleanup (`lazy-screens`, `i18n`, `routines`, `app-frame/helper`). The full suite is slow
+(`server/index.test.ts` alone takes about 20 minutes on Windows); run the files you changed.
 
 ## License and credits
 

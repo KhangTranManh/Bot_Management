@@ -86,15 +86,15 @@ describe("default skin", () => {
     expect(await boot()).toMatchObject({ skin: "midnight", advanced: false });
   });
 
-  it("shows Neon Office selected in Appearance on a fresh install", async () => {
+  it("shows Neon selected in Appearance on a fresh install", async () => {
     os.dark = true;
     await boot();
     const [{ SkinPicker }, { ThemeRow }] = await Promise.all([import("@/components/SkinPicker"), import("@/components/ThemeRow")]);
     const picker = renderToStaticMarkup(createElement(SkinPicker));
     const pressed = [...picker.matchAll(/aria-pressed="true"[\s\S]*?<div class="text-\[13px\] font-medium text-ink">([^<]+)</g)].map(([, name]) => name);
-    expect(pressed).toEqual(["Neon Office"]);
+    expect(pressed).toEqual(["Neon"]);
     const theme = renderToStaticMarkup(createElement(ThemeRow));
-    expect(theme).toContain("Neon Office");
+    expect(theme).toContain("Neon");
     expect([...theme.matchAll(/aria-checked="true"[^>]*>([^<]+)</g)]).toHaveLength(0);
   });
 });
