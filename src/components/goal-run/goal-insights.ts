@@ -1,5 +1,9 @@
 import type { Group, Message } from "@/state/store";
 
+export const ROLE_NAME: Record<string, string> = {
+  lead: "Lead", worker: "Worker", tester: "Tester", reviewer: "Reviewer", evaluator: "Evaluator",
+};
+
 export function goalMessages(messages: readonly Message[], cardId: string): Message[] {
   const at = messages.findIndex((message) => message.id === cardId);
   if (at < 0) return [];

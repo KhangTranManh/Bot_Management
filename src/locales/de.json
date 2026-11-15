@@ -50,6 +50,8 @@
   "server.reports.sentLater": "An das MausBot-Team gesendet (Bericht {report}), nachdem ein früherer Versuch nicht geklappt hat. Milind und Omkar bekommen ihn per E-Mail.",
   "server.reports.sentLaterReply": "An das MausBot-Team gesendet (Bericht {report}), nachdem ein früherer Versuch nicht geklappt hat. Milind und Omkar bekommen ihn per E-Mail und antworten dir an {contact}.",
   "server.goal.confirmed": "Ziel abgeschlossen: Du hast es bestätigt.",
+  "goal.confirm.button": "Ziel als erledigt markieren",
+  "goal.confirm.failed": "Das Ziel konnte nicht bestätigt werden.",
   "server.reports.notYet": "Noch nicht gesendet: {why}. Der Bericht ist gespeichert und wird {when} von selbst gesendet, du musst ihn also nicht noch einmal senden.",
   "server.reports.why.limited": "das MausBot-Team nimmt von jeder App nur wenige Berichte pro Stunde an",
   "server.reports.why.offline": "der Server des MausBot-Teams war nicht erreichbar",

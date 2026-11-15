@@ -7,10 +7,11 @@ import { useStore, type Bot, type Group, type Message } from "@/state/store";
 import { roundButtonCls } from "./bot-panel/rows";
 import { RoomStatus } from "./room-panel/RoomStatus";
 import { useRoomNow } from "@/lib/room-now";
-import { GoalInsights } from "./office/GoalInsights";
-import { GoalRunRecord } from "./office/GoalRunRecord";
+import { GoalInsights } from "./goal-run/GoalInsights";
+import { GoalRunRecord } from "./goal-run/GoalRunRecord";
+import { GoalConfirm } from "./goal-run/GoalConfirm";
 import { GoalBranchControls } from "./GoalBranchControls";
-import { goalMessages } from "./office/goal-insights";
+import { goalMessages } from "./goal-run/goal-insights";
 
 const FEED_LIMIT = 30;
 const LINE_LIMIT = 160;
@@ -80,6 +81,7 @@ export function GoalRunPanel({ group, cardId, onClose }: { group: Group; cardId:
         {run.detail && <p dir="auto" className="mt-1 text-[13px] leading-relaxed text-ink-secondary">{line(run.detail)}</p>}
         <RoomStatus group={group} members={members} now={now} />
         <GoalRunRecord run={run} />
+        {card && <GoalConfirm group={group} message={card} />}
         <GoalInsights group={group} cardId={cardId} now={now} />
         {run.branches && card && <GoalBranchControls message={card} groupId={group.id} threadId={group.threadId} />}
         <h3 className="mt-5 text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{t("goal.panel.activity")}</h3>

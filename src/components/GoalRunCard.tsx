@@ -13,7 +13,7 @@ import { t } from "@/lib/i18n";
 import { useStore, type Message } from "@/state/store";
 import type { GroupGoalRunCardData } from "../../shared/group-goal-run";
 import { GoalBranchControls } from "./GoalBranchControls";
-import { GoalRunFlags } from "./office/GoalRunRecord";
+import { GoalRunFlags } from "./goal-run/GoalRunRecord";
 import type { LocaleKey } from "@/locales";
 
 const DETAIL_LIMIT = 280;

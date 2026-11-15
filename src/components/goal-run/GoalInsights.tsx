@@ -1,7 +1,6 @@
 import type { Group } from "@/state/store";
 import type { MemberNow } from "../../../shared/room-now";
-import { goalReports } from "./goal-insights";
-import { ROLE_NAME } from "./office-model";
+import { goalReports, ROLE_NAME } from "./goal-insights";
 
 const number = (value: number) => value.toLocaleString("vi-VN");
 

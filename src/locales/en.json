@@ -8440,6 +8440,8 @@
   "composer.command.chatDesc": "Send as ordinary chat",
   "goal.panel.activity": "Goal activity",
   "goal.panel.empty": "Nothing has happened since the goal started.",
+  "goal.confirm.button": "Mark goal done",
+  "goal.confirm.failed": "Could not confirm the goal.",
   "goal.panel.open": "Open goal details",
   "routines.goal.turnOf": "Turn {turn} of {max}",
   "routines.goal.turnsOne": "1 turn",
