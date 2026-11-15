@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Option 1: Mission Control Chat (UI-UX Pro Max Standard)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            // UI-UX Pro Max "Developer Tool / Dark Mode OLED" tokens:
+            surface: {
+              canvas: '#06080e',     // Deepest OLED dark
+              base: '#0c101a',       // App background
+              raised: '#121726',     // Panels & cards
+              overlay: '#181f33',    // Modals / dropdowns
+              border: '#1f2a42',     // Subtle structural hairline
+              'border-subtle': '#162033',
+            },
+            accent: {
+              run: '#22c55e',        // Run / execution green
+              action: '#3b82f6',     // Tech action blue
+              lead: '#a855f7',       // Lead bot purple
+              worker: '#38bdf8',     // Worker bot sky blue
+              tester: '#10b981',     // Tester bot emerald
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; letter-spacing: -0.011em; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+    .hairline { border: 1px solid #1f2a42; }
+    .hairline-b { border-bottom: 1px solid #1f2a42; }
+    .hairline-r { border-right: 1px solid #1f2a42; }
+    .hairline-l { border-left: 1px solid #1f2a42; }
+    .hairline-t { border-top: 1px solid #1f2a42; }
+  </style>
+</head>
+<body class="bg-surface-canvas text-slate-100 antialiased h-screen overflow-hidden flex flex-col selection:bg-blue-600/30 selection:text-blue-200">
+
+  <!-- Top System Bar -->
+  <header class="h-12 hairline-b bg-surface-base/90 backdrop-blur-md px-4 flex items-center justify-between shrink-0 select-none z-30">
+    <div class="flex items-center gap-3">
+      <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-sm">
+        <i data-lucide="bot" class="w-4 h-4 text-white"></i>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="font-semibold text-sm tracking-tight text-white">OpenMausBot</span>
+        <span class="text-slate-600 text-xs font-mono">/</span>
+        <span class="text-xs text-slate-400 font-medium">Mission Workspace</span>
+      </div>
+      <div class="ml-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-mono text-emerald-400">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>Local Core · 3 Bots Linked</span>
+      </div>
+    </div>
+
+    <!-- Mode Selector Pills -->
+    <div class="flex items-center bg-surface-raised hairline p-0.5 rounded-xl text-xs font-medium">
+      <button class="px-3 py-1 rounded-lg bg-blue-600 text-white shadow-sm flex items-center gap-1.5 cursor-pointer">
+        <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+        <span>Chat &amp; Mission View</span>
+      </button>
+      <a href="option2-task-command-center.html" class="px-3 py-1 rounded-lg text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer">
+        <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+        <span>Command Center (Option 2)</span>
+      </a>
+    </div>
+
+    <!-- Right Telemetry & Actions -->
+    <div class="flex items-center gap-2.5">
+      <div class="hidden md:flex items-center gap-2 text-xs font-mono text-slate-400 bg-surface-raised hairline px-2.5 py-1 rounded-lg">
+        <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>18.4k tok/turn · $0.21</span>
+      </div>
+      <button class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-surface-raised hairline flex items-center justify-center transition-all cursor-pointer">
+        <i data-lucide="bell" class="w-4 h-4"></i>
+      </button>
+      <div class="w-7 h-7 rounded-lg bg-blue-500/20 hairline flex items-center justify-center text-xs font-semibold text-blue-300">
+        KT
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Body Layout -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- 1. Left Sidebar: Rooms & Agents Roster -->
+    <aside class="w-64 hairline-r bg-surface-base/60 flex flex-col shrink-0 select-none">
+      <div class="p-3 hairline-b">
+        <button class="w-full h-8 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+          <span>Tạo Room mới</span>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-2 space-y-4">
+        <!-- Active Rooms -->
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 px-2 py-1 font-mono">Rooms (Đang hoạt động)</div>
+          <div class="space-y-1 mt-1">
+            <button class="w-full px-2.5 py-2 rounded-xl bg-surface-raised hairline text-white flex items-center justify-between text-xs font-medium cursor-pointer">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>
+                <span class="truncate">Refactor UI Settings</span>
+              </div>
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 hairline">Wave 2</span>
+            </button>
+
+            <button class="w-full px-2.5 py-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-surface-raised/50 flex items-center justify-between text-xs font-medium transition-all cursor-pointer">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                <span class="truncate">Auth Bugfix Windows</span>
+              </div>
+              <span class="text-[10px] font-mono text-slate-500">Idle</span>
+            </button>
+
+            <button class="w-full px-2.5 py-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-surface-raised/50 flex items-center justify-between text-xs font-medium transition-all cursor-pointer">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                <span class="truncate">ACP Protocol Engine</span>
+              </div>
+              <span class="text-[10px] font-mono text-amber-400">Waiting</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Room Bots Roster -->
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 px-2 py-1 font-mono">Đội Bot trong phòng này</div>
+          <div class="space-y-1.5 mt-1">
+            <div class="px-2.5 py-2 rounded-xl bg-surface-base hairline flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-md bg-purple-500/15 text-purple-400 hairline flex items-center justify-center font-bold text-[10px] font-mono">L</span>
+                <div>
+                  <div class="font-medium text-slate-200">Lead Bot</div>
+                  <div class="text-[10px] text-slate-500 font-mono">Claude 3.5 Sonnet</div>
+                </div>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 font-mono">Planner</span>
+            </div>
+
+            <div class="px-2.5 py-2 rounded-xl bg-surface-base hairline flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-md bg-sky-500/15 text-sky-400 hairline flex items-center justify-center font-bold text-[10px] font-mono">W1</span>
+                <div>
+                  <div class="font-medium text-slate-200">Worker 1</div>
+                  <div class="text-[10px] text-slate-500 font-mono">OpenCode Coder</div>
+                </div>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 font-mono">Writing</span>
+            </div>
+
+            <div class="px-2.5 py-2 rounded-xl bg-surface-base hairline flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-md bg-emerald-500/15 text-emerald-400 hairline flex items-center justify-center font-bold text-[10px] font-mono">T</span>
+                <div>
+                  <div class="font-medium text-slate-200">Tester</div>
+                  <div class="text-[10px] text-slate-500 font-mono">ZCode ACP</div>
+                </div>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 font-mono">Standby</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-3 hairline-t bg-surface-canvas text-[11px] text-slate-500 font-mono flex items-center justify-between">
+        <span>Workspace: Concentrix</span>
+        <span class="text-emerald-400">● Synced</span>
+      </div>
+    </aside>
+
+    <!-- 2. Center: Chat Canvas & Live HUD -->
+    <main class="flex-1 flex flex-col bg-surface-canvas relative min-w-0">
+
+      <!-- TOP TEAM BAR (Thay thế hình vẽ văn phòng: cung cấp thông tin thực chiến ngay tầm mắt) -->
+      <div class="hairline-b bg-surface-base px-5 py-2.5 flex items-center justify-between shrink-0 select-none z-20">
+        <div class="flex items-center gap-3 min-w-0">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="font-semibold text-sm text-white truncate">Refactor UI Settings</h2>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 hairline flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+                Wave 2 / 3 Running
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 truncate mt-0.5">Mục tiêu: Đổi typography sang Inter/JetBrains và bo góc chuẩn UI-UX Pro Max</p>
+          </div>
+        </div>
+
+        <!-- Live Agents Pill Stack -->
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 bg-surface-raised hairline px-3 py-1.5 rounded-xl">
+            <span class="text-[11px] font-medium text-slate-400 font-mono">Team Live:</span>
+
+            <!-- Bot 1: Lead -->
+            <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-base hairline text-xs">
+              <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+              <span class="font-medium text-slate-200">Lead:</span>
+              <span class="text-[11px] text-purple-300 font-mono">Review wave</span>
+            </div>
+
+            <!-- Bot 2: Worker -->
+            <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-sky-500/10 border border-sky-500/30 text-xs">
+              <span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>
+              <span class="font-medium text-sky-200">Worker 1:</span>
+              <span class="text-[11px] text-sky-300 font-mono">Editing CSS</span>
+            </div>
+
+            <!-- Bot 3: Tester -->
+            <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-surface-base hairline text-xs">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span class="font-medium text-slate-300">Tester:</span>
+              <span class="text-[11px] text-slate-400 font-mono">Chờ code</span>
+            </div>
+          </div>
+
+          <!-- Toggle Right Panel Button -->
+          <button id="toggleDrawerBtn" class="px-3 py-1.5 rounded-xl hairline bg-surface-raised hover:bg-surface-overlay text-xs text-slate-200 font-medium flex items-center gap-1.5 transition-all cursor-pointer">
+            <i data-lucide="kanban-square" class="w-4 h-4 text-blue-400"></i>
+            <span>Mission Control</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- CHAT STREAM -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-6">
+
+        <!-- User Prompt -->
+        <div class="flex justify-end">
+          <div class="max-w-2xl bg-blue-600 text-white rounded-2xl rounded-tr-md px-4 py-3 shadow-sm text-sm leading-relaxed">
+            Áp dụng các chuẩn từ skill <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-blue-800 text-blue-200">ui-ux-pro-max-skill</code>: đổi sang font Inter + JetBrains Mono, bo góc mượt mà, tối ưu lại các card tool calls.
+          </div>
+        </div>
+
+        <!-- Bot 1: Lead Planning -->
+        <div class="flex gap-3.5 max-w-3xl">
+          <div class="w-8 h-8 rounded-xl bg-purple-500/15 hairline text-purple-400 font-bold flex items-center justify-center shrink-0 text-xs font-mono">
+            L
+          </div>
+          <div class="flex-1 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-xs text-slate-200">Lead (Claude 3.5 Sonnet)</span>
+              <span class="text-[10px] text-slate-500 font-mono">19:42:15</span>
+              <span class="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-400 hairline font-mono">Orchestrator</span>
+            </div>
+
+            <!-- Thinking accordion (Clean, non-intrusive) -->
+            <div class="hairline bg-surface-base rounded-xl overflow-hidden">
+              <button class="w-full px-3 py-2 flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer">
+                <span class="flex items-center gap-2 font-mono text-[11px]">
+                  <i data-lucide="cpu" class="w-3.5 h-3.5 text-blue-400"></i>
+                  Kế hoạch thực thi Wave 2 (Thinking 2.4s · 320 tokens)
+                </span>
+                <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+              </button>
+              <div class="px-3 pb-2.5 text-xs text-slate-400 font-mono border-t border-surface-border pt-2 leading-relaxed">
+                &gt; Đã phân tích typography.csv: Chọn font pairing "Modern Dark Cinema" (Inter + JetBrains Mono).<br>
+                &gt; Đã phân tích colors.csv: Chọn bảng mã OLED Developer (#06080E / #121726 / #22C55E).<br>
+                &gt; Giao nhiệm vụ cho Worker 1 cập nhật CSS tokens.
+              </div>
+            </div>
+
+            <!-- Response Bubble -->
+            <div class="bg-surface-raised hairline rounded-2xl rounded-tl-md p-4 text-sm text-slate-200 leading-relaxed space-y-2">
+              <p>Tôi đã định hình xong Design System theo chuẩn <strong class="text-white">UI-UX Pro Max</strong>:</p>
+              <ul class="list-disc list-inside space-y-1 text-slate-300 text-xs font-mono">
+                <li><strong class="text-slate-100">Typography:</strong> Inter (UI) + JetBrains Mono (Code/Telemetry).</li>
+                <li><strong class="text-slate-100">Radius:</strong> 12px (buttons/cards nhỏ), 16px (panels/modals).</li>
+                <li><strong class="text-slate-100">Surfaces:</strong> Bỏ viền tím 4px thô, chuyển sang hairline border <code>#1F2A42</code>.</li>
+              </ul>
+              <p class="text-xs text-slate-400">Worker 1 đang thực hiện sửa đổi trực tiếp vào source code.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bot 2: Worker Tool Calls -->
+        <div class="flex gap-3.5 max-w-3xl">
+          <div class="w-8 h-8 rounded-xl bg-sky-500/15 hairline text-sky-400 font-bold flex items-center justify-center shrink-0 text-xs font-mono">
+            W1
+          </div>
+          <div class="flex-1 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-xs text-slate-200">Worker 1 (OpenCode)</span>
+              <span class="text-[10px] text-slate-500 font-mono">19:42:38</span>
+              <span class="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 hairline font-mono">Coder</span>
+            </div>
+
+            <!-- Tool Call Card (Swiss Minimalist) -->
+            <div class="hairline bg-surface-base rounded-xl p-3.5 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-xs font-medium text-slate-200">
+                  <i data-lucide="file-code" class="w-4 h-4 text-sky-400"></i>
+                  <span>Tool: <code class="text-slate-300 font-mono">edit_file</code> &rarr; <span class="text-white font-mono">src/styles/tokens.css</span></span>
+                </div>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 hairline">+36 -12 lines</span>
+              </div>
+              <div class="bg-surface-canvas rounded-lg p-3 font-mono text-xs text-slate-300 overflow-x-auto hairline leading-relaxed">
+                <span class="text-rose-400">- --font-heading: "Chakra Petch", sans-serif;</span><br>
+                <span class="text-rose-400">- --radius-card: 4px;</span><br>
+                <span class="text-emerald-400">+ --font-heading: "Inter", sans-serif;</span><br>
+                <span class="text-emerald-400">+ --font-mono: "JetBrains Mono", monospace;</span><br>
+                <span class="text-emerald-400">+ --radius-card: 16px;</span>
+              </div>
+            </div>
+
+            <div class="bg-surface-raised hairline rounded-2xl rounded-tl-md p-4 text-sm text-slate-200 leading-relaxed">
+              Em đã áp dụng thành công các tokens chuẩn. Toàn bộ các component đã mềm ra ngay lập tức. Đã thông báo cho Tester sẵn sàng nghiệm thu.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- COMPOSER BAR (Modern Floating / Docked) -->
+      <div class="p-4 hairline-t bg-surface-base/80 backdrop-blur-md">
+        <div class="max-w-4xl mx-auto bg-surface-raised hairline rounded-2xl p-2.5 shadow-xl focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+          <textarea placeholder="Chỉ đạo thêm cho đội bot... (Enter gửi, Shift+Enter xuống dòng)" rows="2" class="w-full bg-transparent text-sm text-slate-100 placeholder-slate-500 resize-none px-3 py-1.5 focus:outline-none"></textarea>
+          
+          <div class="flex items-center justify-between pt-2 hairline-t px-2">
+            <div class="flex items-center gap-2">
+              <button class="px-2.5 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-surface-overlay flex items-center gap-1.5 transition-colors cursor-pointer">
+                <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
+                <span>Gửi file kèm</span>
+              </button>
+              <button class="px-2.5 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-surface-overlay flex items-center gap-1.5 transition-colors cursor-pointer">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-blue-400"></i>
+                <span>/plan outline</span>
+              </button>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <span class="text-[11px] font-mono text-slate-500">⌘+Enter</span>
+              <button class="px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
+                <span>Gửi lệnh</span>
+                <i data-lucide="send" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 3. Right Slide-over / Split Panel: MISSION & GOAL TRACKER -->
+    <!-- Thực dụng 100%: Thay thế hoàn toàn hình vẽ văn phòng vô dụng -->
+    <aside id="missionDrawer" class="w-80 hairline-l bg-surface-base flex flex-col shrink-0 select-none transition-all duration-300">
+      
+      <!-- Panel Header -->
+      <div class="h-12 hairline-b px-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2">
+          <i data-lucide="target" class="w-4 h-4 text-blue-400"></i>
+          <span class="font-semibold text-xs uppercase tracking-wider text-slate-200 font-mono">Mission Tracker</span>
+        </div>
+        <button id="closeDrawerBtn" class="text-slate-500 hover:text-slate-300 cursor-pointer">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Panel Body -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
+
+        <!-- Active Goal Box -->
+        <div class="rounded-xl hairline bg-surface-raised p-3.5 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-mono uppercase tracking-wider text-blue-400 font-semibold">Active Goal #104</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 hairline">Wave 2 / 3</span>
+          </div>
+          <h4 class="font-semibold text-sm text-white">Refactor UI Settings</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">Đổi font, bỏ góc sắc 4px, mềm hóa toàn bộ components theo chuẩn UI-UX Pro Max.</p>
+          
+          <!-- Progress bar -->
+          <div class="space-y-1">
+            <div class="flex justify-between text-[11px] text-slate-400 font-mono">
+              <span>Tiến độ thực thi</span>
+              <span class="text-emerald-400">66%</span>
+            </div>
+            <div class="w-full h-1.5 rounded-full bg-surface-canvas overflow-hidden">
+              <div class="h-full bg-blue-500 rounded-full" style="width: 66%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Plan Steps Checklist -->
+        <div class="space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 font-mono">Kế hoạch chi tiết (Plan Steps)</div>
+          
+          <div class="space-y-2 text-xs">
+            <div class="flex items-start gap-2.5 p-2 rounded-xl bg-surface-raised hairline">
+              <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+              <div class="flex-1">
+                <span class="text-slate-300 line-through">1. Trích xuất tokens typography &amp; colors</span>
+                <span class="block text-[10px] text-slate-500 font-mono mt-0.5">Xong bởi Lead</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-2.5 p-2 rounded-xl bg-blue-500/10 border border-blue-500/30">
+              <i data-lucide="loader-2" class="w-4 h-4 text-blue-400 animate-spin shrink-0 mt-0.5"></i>
+              <div class="flex-1">
+                <span class="text-blue-200 font-medium">2. Viết lại token CSS và bo góc mới</span>
+                <span class="block text-[10px] text-blue-400 font-mono mt-0.5">Đang làm bởi Worker 1</span>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-2.5 p-2 rounded-xl bg-surface-canvas hairline opacity-60">
+              <i data-lucide="circle" class="w-4 h-4 text-slate-500 shrink-0 mt-0.5"></i>
+              <div class="flex-1">
+                <span class="text-slate-400">3. Chạy test vitest kiểm tra tính tương thích</span>
+                <span class="block text-[10px] text-slate-500 font-mono mt-0.5">Chờ Tester</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modified Files Audit -->
+        <div class="space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 font-mono">File đã sửa đổi (Writes Audit)</div>
+          <div class="space-y-1.5 font-mono text-xs">
+            <div class="flex items-center justify-between p-2 rounded-lg bg-surface-canvas hairline">
+              <span class="text-slate-300 truncate text-[11px]">src/styles/neon.css</span>
+              <span class="text-[10px] text-emerald-400 shrink-0">+36 -12</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-surface-canvas hairline">
+              <span class="text-slate-300 truncate text-[11px]">src/components/SkinPicker.tsx</span>
+              <span class="text-[10px] text-emerald-400 shrink-0">+14 -2</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Control Action Buttons -->
+      <div class="p-3 hairline-t bg-surface-base space-y-2">
+        <button class="w-full h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer">
+          <i data-lucide="check-check" class="w-4 h-4"></i>
+          <span>Xác nhận xong (Confirm Done)</span>
+        </button>
+        <div class="grid grid-cols-2 gap-2">
+          <button class="h-8 rounded-lg hairline hover:bg-surface-raised text-[11px] text-slate-300 font-medium flex items-center justify-center gap-1 cursor-pointer">
+            <i data-lucide="pause" class="w-3 h-3 text-amber-400"></i>
+            <span>Tạm dừng</span>
+          </button>
+          <button class="h-8 rounded-lg hairline hover:bg-surface-raised text-[11px] text-slate-300 font-medium flex items-center justify-center gap-1 cursor-pointer">
+            <i data-lucide="rotate-ccw" class="w-3 h-3 text-rose-400"></i>
+            <span>Chạy lại</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <script>
+    lucide.createIcons();
+    const drawer = document.getElementById('missionDrawer');
+    const toggleBtn = document.getElementById('toggleDrawerBtn');
+    const closeBtn = document.getElementById('closeDrawerBtn');
+
+    toggleBtn.addEventListener('click', () => {
+      drawer.classList.toggle('hidden');
+    });
+    closeBtn.addEventListener('click', () => {
+      drawer.classList.add('hidden');
+    });
+  </script>
+</body>
+</html>
