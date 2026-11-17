@@ -433,6 +433,18 @@ const Bubble = memo(function Bubble({
     <div {...{ [MESSAGE_ROW]: "" }} className={cn("group flex w-full flex-col", user ? "animate-msg-in items-end" : "items-start", simple && join?.above && SIMPLE_STACKED)}>
       {message.relay ? <RelayLabel message={message} /> : peer && <PeerLabel peer={peer} />}
       {speaker && <div className="mb-0.5 px-1 text-[12px] font-medium text-ink-secondary">{speaker}</div>}
+      {!user && !peer && !speaker && !join?.above && (
+        <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-ink-secondary select-none">
+          <BotAvatar bot={{ name: botName, color: (bots.find((b) => b.id === botId)?.color ?? "blue") as any }} size={20} />
+          <span className="font-semibold text-ink">{botName}</span>
+          {bots.find((b) => b.id === botId)?.chiefOfStaff && (
+            <span className="rounded-md bg-accent/15 px-1.5 py-0.2 font-mono text-[10px] text-accent">Chief of Staff</span>
+          )}
+          <span className="font-mono text-[11px] text-ink-tertiary">
+            · {new Date(message.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        </div>
+      )}
       <div className={cn("flex w-full items-center gap-1.5", user ? "justify-end" : "justify-start")}>
         {user && (
           <MessageActions

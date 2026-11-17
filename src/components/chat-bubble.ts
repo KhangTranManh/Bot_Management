@@ -11,16 +11,16 @@ import { isPureLeakedSystemHarnessMessage } from "../../shared/system-message-gu
 /** Simple mode's message text: 15/22, the size whose cap height matches the design. */
 export const SIMPLE_BUBBLE_TEXT = "text-[15px] leading-[22px]";
 
-const SIMPLE_BUBBLE_SHAPE = `min-w-9 rounded-[18px] px-3 py-[7px] ${SIMPLE_BUBBLE_TEXT}`;
+const SIMPLE_BUBBLE_SHAPE = `min-w-9 rounded-2xl px-4 py-3 shadow-sm ${SIMPLE_BUBBLE_TEXT}`;
 
 /** Simple mode's bot bubble: the one surface tone. */
-export const SIMPLE_BOT_BUBBLE = `${SIMPLE_BUBBLE_SHAPE} bg-card text-ink`;
+export const SIMPLE_BOT_BUBBLE = `${SIMPLE_BUBBLE_SHAPE} bg-card rounded-tl-sm text-ink`;
 
 /** Simple mode's own bubble; the bot's colour, when on, comes from its inline style. */
-export const SIMPLE_USER_BUBBLE = `${SIMPLE_BUBBLE_SHAPE} bg-bubble-user font-normal`;
+export const SIMPLE_USER_BUBBLE = `${SIMPLE_BUBBLE_SHAPE} bg-bubble-user rounded-tr-sm font-normal`;
 
-/** At most 560 wide, 80% of the column, and always 82px short of it, so a reply never meets the far edge. */
-export const SIMPLE_BUBBLE_MAX = "max-w-[min(var(--chat-bubble-max),var(--chat-bubble-pct),calc(100%-82px))]";
+/** At most 860 wide, 85% of the column, and always 48px short of it, so a reply never meets the far edge. */
+export const SIMPLE_BUBBLE_MAX = "max-w-[min(var(--chat-bubble-max),860px,var(--chat-bubble-pct),calc(100%-48px))]";
 
 /** A plain-text bot bubble drawn outside the transcript's own Bubble: a widget's text fallback or a row that failed. */
 export function plainBotBubble(simple: boolean): string {

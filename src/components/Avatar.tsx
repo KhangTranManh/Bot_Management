@@ -8,13 +8,13 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { Crown, Code2, Layout, Compass, ShieldCheck, Cpu, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { CHROME_EYES, CHROME_GRADIENT, MAUS_COLORS, type MausColor, type MausMotion, type MausState } from "@/lib/mascot";
 import { CursorAvatar, type CursorAvatarHandle } from "./CursorAvatar";
 import { avatarCropRadius, botAvatarProfile, clampAvatarFocus, clampAvatarZoom, mascotFaceInk, type BotAvatarCrop, type MascotFaceColor } from "../../shared/bot-avatar";
 import { MASCOT_BODIES, botMascotBody } from "../../shared/mascot-bodies";
 import { isCarvedBody, type BotBodyId } from "../../shared/bot-body";
-import { useFestivalDress, wornBody } from "@/lib/festival-dress";
 import { t } from "@/lib/i18n";
 import { CarvedAvatar } from "./CarvedAvatar";
 import { steelBodyImage } from "@/lib/steel-body";
@@ -245,9 +245,110 @@ export function resolveBotAvatarOutcome(params: {
   return "flatImage";
 }
 
-export function BotAvatar({ bot, size = 44, label, readable = false, ...mascotProps }: BotAvatarProps) {
+export function botSquircleMeta(color: MausColor | string, name = "", title = "", chief = false) {
+  const n = `${name} ${title}`.toLowerCase();
+  if (chief || color === "chrome" || color === "purple" || n.includes("lead") || n.includes("chief") || n.includes("maus") || n.includes("bot management")) {
+    return {
+      gradient: "from-purple-600 via-indigo-600 to-indigo-800",
+      textColor: "text-purple-100",
+      icon: Crown,
+      glow: "rgba(168, 85, 247, 0.4)",
+    };
+  }
+  if (color === "blue" || n.includes("code") || n.includes("noodle") || n.includes("dev") || n.includes("worker")) {
+    return {
+      gradient: "from-sky-500 via-blue-600 to-blue-700",
+      textColor: "text-sky-100",
+      icon: Code2,
+      glow: "rgba(56, 189, 248, 0.4)",
+    };
+  }
+  if (color === "teal" || n.includes("ui") || n.includes("mochi") || n.includes("front") || n.includes("layout")) {
+    return {
+      gradient: "from-teal-500 via-emerald-600 to-teal-700",
+      textColor: "text-teal-100",
+      icon: Layout,
+      glow: "rgba(20, 184, 166, 0.4)",
+    };
+  }
+  if (color === "orange" || color === "yellow" || n.includes("research") || n.includes("wren") || n.includes("doc")) {
+    return {
+      gradient: "from-amber-500 via-orange-500 to-orange-600",
+      textColor: "text-amber-100",
+      icon: Compass,
+      glow: "rgba(245, 158, 11, 0.4)",
+    };
+  }
+  if (color === "red" || color === "coral" || n.includes("test") || n.includes("rio") || n.includes("qa") || n.includes("audit")) {
+    return {
+      gradient: "from-rose-500 via-red-600 to-rose-700",
+      textColor: "text-rose-100",
+      icon: ShieldCheck,
+      glow: "rgba(244, 63, 94, 0.4)",
+    };
+  }
+  if (color === "green") {
+    return {
+      gradient: "from-emerald-500 via-green-600 to-emerald-700",
+      textColor: "text-emerald-100",
+      icon: Sparkles,
+      glow: "rgba(34, 197, 94, 0.4)",
+    };
+  }
+  return {
+    gradient: "from-slate-700 via-slate-800 to-slate-900",
+    textColor: "text-slate-100",
+    icon: Cpu,
+    glow: "rgba(100, 116, 139, 0.3)",
+  };
+}
+
+export function TechSquircleAvatar({
+  color = "blue",
+  name = "",
+  title = "",
+  chief = false,
+  size = 44,
+  label,
+  className,
+}: {
+  color?: MausColor | string;
+  name?: string;
+  title?: string;
+  chief?: boolean;
+  size?: number;
+  label?: string;
+  className?: string;
+}) {
+  const meta = botSquircleMeta(color, name, title, chief);
+  const Icon = meta.icon;
+  const iconSize = Math.max(12, Math.round(size * 0.46));
+  const radius = Math.max(6, Math.round(size * 0.30));
+
+  return (
+    <span
+      className={cn(
+        "relative inline-flex shrink-0 items-center justify-center bg-gradient-to-br border border-white/15 shadow-sm transition-transform duration-150",
+        meta.gradient,
+        className,
+      )}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        boxShadow: `0 3px 12px -2px ${meta.glow}`,
+      }}
+      aria-label={label ?? name}
+      role="img"
+    >
+      <Icon size={iconSize} className={cn("shrink-0", meta.textColor)} />
+    </span>
+  );
+}
+
+export function BotAvatar(props: BotAvatarProps) {
+  const { bot, size = 44, label } = props;
   const profile = botAvatarProfile(bot);
-  const festival = useFestivalDress();
   const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => setImageFailed(false), [profile.avatarUrl]);
@@ -260,12 +361,11 @@ export function BotAvatar({ bot, size = 44, label, readable = false, ...mascotPr
 
   if (outcome !== "flatImage") {
     return (
-      <MausAvatar
-        bodyId={wornBody(bot.mascotBody, bot.color, festival)}
-        {...mascotProps}
+      <TechSquircleAvatar
         color={bot.color}
-        faceColor={bot.mascotFaceColor}
-        gradient={readable ? roomAvatarGradient(bot.color) : undefined}
+        name={bot.name}
+        title={(bot as any).title ?? ""}
+        chief={Boolean((bot as any).chiefOfStaff)}
         size={size}
         label={label ?? bot.name}
       />
